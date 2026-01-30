@@ -1,0 +1,17 @@
+Welcome to {{.OrganizationName}}!
+
+Hi {{.Name}},
+
+You have been invited to join {{.OrganizationName}} as a team member. We're excited to have you on board!
+
+To get started, please activate your account by visiting the following link:
+
+{{.InviteLink}}
+
+IMPORTANT: This invitation link will expire in 7 days for security reasons.
+
+If you didn't expect this invitation, please ignore this email.
+
+---
+This is an automated email. Please do not reply to this message.
+© {{.OrganizationName}} - Real Estate CRM

@@ -1,0 +1,6 @@
+first_name,last_name,email,phone,budget_min,budget_max,property_type,bedrooms,bathrooms,square_feet,preferred_location,notes
+John,Doe,john.doe@example.com,+1234567890,500000,1000000,Apartment,3,2,1500,Downtown,Looking for modern apartment
+Jane,Smith,jane.smith@example.com,+0987654321,800000,1500000,Villa,4,3,2500,Suburbs,Prefers sea view
+Michael,Johnson,michael.j@example.com,+1122334455,300000,600000,Condo,2,2,1200,City Center,First-time buyer
+Sarah,Williams,sarah.w@example.com,+5544332211,1000000,2000000,Penthouse,5,4,3500,Beachfront,Luxury property seeker
+David,Brown,david.brown@example.com,+9988776655,400000,800000,Townhouse,3,2,1800,Residential Area,Family-friendly location
