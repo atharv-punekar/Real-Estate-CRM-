@@ -13,19 +13,19 @@ func (r *AudienceRepository) Create(audience *models.Audience) error {
 	return database.DB.Create(audience).Error
 }
 
-// FindByID finds an audience by ID within an organization
-func (r *AudienceRepository) FindByID(id, orgID string) (*models.Audience, error) {
+// FindByID finds an audience by ID within an organization, filtered by creator
+func (r *AudienceRepository) FindByID(id, orgID, createdBy string) (*models.Audience, error) {
 	var audience models.Audience
-	if err := database.DB.Where("id = ? AND organization_id = ?", id, orgID).First(&audience).Error; err != nil {
+	if err := database.DB.Where("id = ? AND organization_id = ? AND created_by = ?", id, orgID, createdBy).First(&audience).Error; err != nil {
 		return nil, err
 	}
 	return &audience, nil
 }
 
-// FindAllByOrg returns all audiences for an organization
-func (r *AudienceRepository) FindAllByOrg(orgID string) ([]models.Audience, error) {
+// FindAllByOrg returns all audiences for an organization filtered by creator
+func (r *AudienceRepository) FindAllByOrg(orgID, createdBy string) ([]models.Audience, error) {
 	var audiences []models.Audience
-	if err := database.DB.Where("organization_id = ?", orgID).Order("created_at DESC").Find(&audiences).Error; err != nil {
+	if err := database.DB.Where("organization_id = ? AND created_by = ?", orgID, createdBy).Order("created_at DESC").Find(&audiences).Error; err != nil {
 		return nil, err
 	}
 	return audiences, nil

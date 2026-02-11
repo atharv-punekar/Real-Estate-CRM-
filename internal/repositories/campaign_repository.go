@@ -21,10 +21,10 @@ func (r *CampaignRepository) Create(campaign *models.Campaign) error {
 
 }
 
-// FindByID finds a campaign by ID within an organization
-func (r *CampaignRepository) FindByID(id, orgID string) (*models.Campaign, error) {
+// FindByID finds a campaign by ID within an organization, filtered by creator
+func (r *CampaignRepository) FindByID(id, orgID, createdBy string) (*models.Campaign, error) {
 	var campaign models.Campaign
-	if err := database.DB.Where("id = ? AND organization_id = ?", id, orgID).First(&campaign).Error; err != nil {
+	if err := database.DB.Where("id = ? AND organization_id = ? AND created_by = ?", id, orgID, createdBy).First(&campaign).Error; err != nil {
 		return nil, err
 	}
 	return &campaign, nil
@@ -39,12 +39,13 @@ func (r *CampaignRepository) FindByIDOnly(id string) (*models.Campaign, error) {
 	return &campaign, nil
 }
 
-// FindAllByOrg returns paginated campaigns for an organization with optional status filter
-func (r *CampaignRepository) FindAllByOrg(orgID string, status string, page, limit int) ([]models.Campaign, int64, error) {
+// FindAllByOrg returns paginated campaigns for an organization filtered by creator with optional status filter and sorting
+func (r *CampaignRepository) FindAllByOrg(orgID, createdBy, status string, page, limit int, sortBy, sortOrder string) ([]models.Campaign, int64, error) {
 	var campaigns []models.Campaign
 	var total int64
 
-	query := database.DB.Where("organization_id = ?", orgID)
+	// Filter by organization and creator
+	query := database.DB.Where("organization_id = ? AND created_by = ?", orgID, createdBy)
 
 	// Add status filter if provided
 	if status != "" {
@@ -56,9 +57,37 @@ func (r *CampaignRepository) FindAllByOrg(orgID string, status string, page, lim
 		return nil, 0, err
 	}
 
+	// Build sort query
+	allowedFields := []string{"created_at", "updated_at", "scheduled_at", "name", "status"}
+	var orderClause string
+
+	if sortBy != "" && sortOrder != "" {
+		sortOrder = fmt.Sprintf("%s", sortOrder) // Use fmt to avoid import issues
+		if sortOrder != "ASC" && sortOrder != "DESC" {
+			sortOrder = "DESC"
+		}
+
+		// Validate sortBy is in allowed fields
+		isAllowed := false
+		for _, field := range allowedFields {
+			if sortBy == field {
+				isAllowed = true
+				break
+			}
+		}
+
+		if isAllowed {
+			orderClause = sortBy + " " + sortOrder
+		} else {
+			orderClause = "created_at DESC"
+		}
+	} else {
+		orderClause = "created_at DESC"
+	}
+
 	// Get paginated results
 	offset := (page - 1) * limit
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&campaigns).Error; err != nil {
+	if err := query.Offset(offset).Limit(limit).Order(orderClause).Find(&campaigns).Error; err != nil {
 		return nil, 0, err
 	}
 

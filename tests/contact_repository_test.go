@@ -24,11 +24,14 @@ func TestContactRepository_FindAllByOrg(t *testing.T) {
 	}
 	db.Create(&org)
 
+	// Use consistent createdBy for all contacts in this test
+	testUserID := uuid.New().String()
+
 	// Create contacts
 	for i := 1; i <= 3; i++ {
 		contact := models.Contact{
 			OrganizationID: org.ID.String(),
-			CreatedBy:      uuid.New().String(),
+			CreatedBy:      testUserID, // All use same creator
 			FirstName:      "Contact",
 			LastName:       string(rune(i)),
 			Email:          "contact" + string(rune(i)) + "@test.com",
@@ -36,8 +39,8 @@ func TestContactRepository_FindAllByOrg(t *testing.T) {
 		db.Create(&contact)
 	}
 
-	// Find all contacts
-	contacts, total, err := repo.FindAllByOrg(org.ID.String(), 1, 10, "")
+	// Find all contacts for this creator
+	contacts, total, err := repo.FindAllByOrg(org.ID.String(), testUserID, 1, 10, "", "", "")
 
 	assert.NoError(t, err)
 	assert.GreaterOrEqual(t, len(contacts), 3)
@@ -69,7 +72,7 @@ func TestContactRepository_FindByID(t *testing.T) {
 	db.Create(&contact)
 
 	// Find contact
-	found, err := repo.FindByID(contact.ID, org.ID.String())
+	found, err := repo.FindByID(contact.ID, org.ID.String(), contact.CreatedBy)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, found)

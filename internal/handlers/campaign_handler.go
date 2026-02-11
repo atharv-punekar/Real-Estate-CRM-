@@ -3,10 +3,12 @@ package handlers
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
+	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/datatypes"
 )
@@ -38,9 +40,15 @@ func CreateCampaign(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	// Validate and normalize campaign name
+	campaignName := strings.TrimSpace(req.Name)
+	if err := utils.ValidateNotEmpty(campaignName, "Campaign name"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	// Validate required fields
-	if req.Name == "" || req.TemplateID == "" || req.ScheduleType == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Name, template_id, and schedule_type are required"})
+	if req.TemplateID == "" || req.ScheduleType == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "template_id and schedule_type are required"})
 	}
 
 	// Validate schedule type
@@ -48,13 +56,18 @@ func CreateCampaign(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "schedule_type must be 'once' or 'recurring'"})
 	}
 
+	// Reject campaign creation for past dates
+	if req.ScheduledAt.Before(time.Now()) {
+		return c.Status(400).JSON(fiber.Map{"error": "Cannot schedule campaign in the past. Please select a future date and time"})
+	}
+
 	// Validate recipients (must have either audience_ids or contact_id, not both)
 	if (len(req.AudienceIDs) == 0 && req.ContactID == nil) || (len(req.AudienceIDs) > 0 && req.ContactID != nil) {
 		return c.Status(400).JSON(fiber.Map{"error": "Must provide either audience_ids or contact_id, not both"})
 	}
 
-	// Verify template exists
-	_, err := templateRepo.FindByID(req.TemplateID, orgID)
+	// Verify template exists and belongs to the agent
+	_, err := templateRepo.FindByID(req.TemplateID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Email template not found"})
 	}
@@ -62,16 +75,16 @@ func CreateCampaign(c *fiber.Ctx) error {
 	// Verify audiences exist if provided
 	if len(req.AudienceIDs) > 0 {
 		for _, audienceID := range req.AudienceIDs {
-			_, err := audienceRepo.FindByID(audienceID, orgID)
+			_, err := audienceRepo.FindByID(audienceID, orgID, userID)
 			if err != nil {
 				return c.Status(404).JSON(fiber.Map{"error": "Audience not found: " + audienceID})
 			}
 		}
 	}
 
-	// Verify contact exists if provided
+	// Verify contact exists and belongs to the agent if provided
 	if req.ContactID != nil {
-		_, err := contactRepo.FindByID(*req.ContactID, orgID)
+		_, err := contactRepo.FindByID(*req.ContactID, orgID, userID)
 		if err != nil {
 			return c.Status(404).JSON(fiber.Map{"error": "Contact not found"})
 		}
@@ -99,7 +112,7 @@ func CreateCampaign(c *fiber.Ctx) error {
 
 	campaign := models.Campaign{
 		OrganizationID:       orgID,
-		Name:                 req.Name,
+		Name:                 campaignName,
 		TemplateID:           req.TemplateID,
 		AudienceIDs:          req.AudienceIDs,
 		ContactID:            req.ContactID,
@@ -127,40 +140,46 @@ func CreateCampaign(c *fiber.Ctx) error {
 	})
 }
 
-// GetCampaigns returns paginated campaigns with optional status filter
+// GetCampaigns returns paginated campaigns with optional status filter and sorting
 func GetCampaigns(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
 	status := c.Query("status", "")
+	sortBy := c.Query("sort_by", "")
+	sortOrder := c.Query("sort_order", "")
 
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 100 {
-		limit = 20
-	}
+	// Validate pagination params
+	page, limit = utils.ValidatePaginationParams(page, limit)
 
-	campaigns, total, err := campaignRepo.FindAllByOrg(orgID, status, page, limit)
+	campaigns, total, err := campaignRepo.FindAllByOrg(orgID, userID, status, page, limit, sortBy, sortOrder)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch campaigns"})
 	}
 
+	// Calculate pagination metadata
+	pagination := utils.CalculatePagination(page, limit, total)
+
 	return c.JSON(fiber.Map{
-		"campaigns": campaigns,
-		"total":     total,
-		"page":      page,
-		"limit":     limit,
+		"campaigns":    campaigns,
+		"total_count":  pagination.Total,
+		"page":         pagination.Page,
+		"limit":        pagination.Limit,
+		"total_pages":  pagination.TotalPages,
+		"offset_start": pagination.OffsetStart,
+		"offset_end":   pagination.OffsetEnd,
 	})
 }
 
 // GetCampaignByID returns a single campaign
 func GetCampaignByID(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	campaignID := c.Params("id")
 
-	campaign, err := campaignRepo.FindByID(campaignID, orgID)
+	campaign, err := campaignRepo.FindByID(campaignID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Campaign not found"})
 	}
@@ -171,9 +190,10 @@ func GetCampaignByID(c *fiber.Ctx) error {
 // UpdateCampaign updates a campaign
 func UpdateCampaign(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	campaignID := c.Params("id")
 
-	campaign, err := campaignRepo.FindByID(campaignID, orgID)
+	campaign, err := campaignRepo.FindByID(campaignID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Campaign not found"})
 	}
@@ -212,9 +232,10 @@ func UpdateCampaign(c *fiber.Ctx) error {
 // DeleteCampaign deletes a campaign
 func DeleteCampaign(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	campaignID := c.Params("id")
 
-	campaign, err := campaignRepo.FindByID(campaignID, orgID)
+	campaign, err := campaignRepo.FindByID(campaignID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Campaign not found"})
 	}
@@ -234,9 +255,10 @@ func DeleteCampaign(c *fiber.Ctx) error {
 // PauseCampaign pauses a campaign
 func PauseCampaign(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	campaignID := c.Params("id")
 
-	campaign, err := campaignRepo.FindByID(campaignID, orgID)
+	campaign, err := campaignRepo.FindByID(campaignID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Campaign not found"})
 	}
@@ -255,9 +277,10 @@ func PauseCampaign(c *fiber.Ctx) error {
 // ResumeCampaign resumes a paused campaign
 func ResumeCampaign(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	campaignID := c.Params("id")
 
-	campaign, err := campaignRepo.FindByID(campaignID, orgID)
+	campaign, err := campaignRepo.FindByID(campaignID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Campaign not found"})
 	}
@@ -276,10 +299,11 @@ func ResumeCampaign(c *fiber.Ctx) error {
 // GetCampaignLogs returns paginated logs for a campaign
 func GetCampaignLogs(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	campaignID := c.Params("id")
 
-	// Verify campaign exists and belongs to org
-	_, err := campaignRepo.FindByID(campaignID, orgID)
+	// Verify campaign exists and belongs to the agent
+	_, err := campaignRepo.FindByID(campaignID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Campaign not found"})
 	}

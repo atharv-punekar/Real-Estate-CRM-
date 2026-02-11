@@ -15,24 +15,26 @@ func (r *ContactRepository) Create(contact *models.Contact) error {
 	return database.DB.Create(contact).Error
 }
 
-// FindByID finds a contact by ID within an organization
-func (r *ContactRepository) FindByID(id, orgID string) (*models.Contact, error) {
+// FindByID finds a contact by ID within an organization, filtered by creator
+func (r *ContactRepository) FindByID(id, orgID, createdBy string) (*models.Contact, error) {
 	var contact models.Contact
-	if err := database.DB.Where("id = ? AND organization_id = ?", id, orgID).First(&contact).Error; err != nil {
+	if err := database.DB.Where("id = ? AND organization_id = ? AND created_by = ?", id, orgID, createdBy).First(&contact).Error; err != nil {
 		return nil, err
 	}
 	return &contact, nil
 }
 
-// FindAllByOrg returns paginated contacts for an organization with optional search
-func (r *ContactRepository) FindAllByOrg(orgID string, page, limit int, search string) ([]models.Contact, int64, error) {
+// FindAllByOrg returns paginated contacts for an organization filtered by creator
+func (r *ContactRepository) FindAllByOrg(orgID, createdBy string, page, limit int, search, sortBy, sortOrder string) ([]models.Contact, int64, error) {
 	var contacts []models.Contact
 	var total int64
 
-	query := database.DB.Where("organization_id = ?", orgID)
+	// Filter by organization, creator, and active status
+	query := database.DB.Where("organization_id = ? AND created_by = ? AND is_active = ?", orgID, createdBy, true)
 
-	// Add search filter if provided
+	// Add search filter if provided (trim whitespace)
 	if search != "" {
+		search = strings.TrimSpace(search)
 		searchPattern := "%" + search + "%"
 		query = query.Where(
 			"first_name ILIKE ? OR last_name ILIKE ? OR email ILIKE ? OR phone ILIKE ?",
@@ -45,9 +47,37 @@ func (r *ContactRepository) FindAllByOrg(orgID string, page, limit int, search s
 		return nil, 0, err
 	}
 
+	// Build sort query
+	allowedFields := []string{"created_at", "updated_at", "first_name", "last_name", "email", "budget_min", "budget_max"}
+	var orderClause string
+
+	if sortBy != "" && sortOrder != "" {
+		sortOrder = strings.ToUpper(sortOrder)
+		if sortOrder != "ASC" && sortOrder != "DESC" {
+			sortOrder = "DESC"
+		}
+
+		// Validate sortBy is in allowed fields
+		isAllowed := false
+		for _, field := range allowedFields {
+			if sortBy == field {
+				isAllowed = true
+				break
+			}
+		}
+
+		if isAllowed {
+			orderClause = sortBy + " " + sortOrder
+		} else {
+			orderClause = "created_at DESC"
+		}
+	} else {
+		orderClause = "created_at DESC"
+	}
+
 	// Get paginated results
 	offset := (page - 1) * limit
-	if err := query.Offset(offset).Limit(limit).Order("created_at DESC").Find(&contacts).Error; err != nil {
+	if err := query.Offset(offset).Limit(limit).Order(orderClause).Find(&contacts).Error; err != nil {
 		return nil, 0, err
 	}
 

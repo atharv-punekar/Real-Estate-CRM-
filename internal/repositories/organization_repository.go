@@ -31,3 +31,23 @@ func (OrganizationRepository) FindByID(id uuid.UUID) (*models.Organization, erro
 	}
 	return &org, nil
 }
+
+// FindByName finds an organization by name (case-insensitive)
+func (OrganizationRepository) FindByName(name string) (*models.Organization, error) {
+	var org models.Organization
+	err := database.DB.Where("LOWER(name) = LOWER(?)", name).First(&org).Error
+	if err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
+// FindByNameExcluding finds an organization by name, excluding a specific ID (for update validation)
+func (OrganizationRepository) FindByNameExcluding(name string, excludeID uuid.UUID) (*models.Organization, error) {
+	var org models.Organization
+	err := database.DB.Where("LOWER(name) = LOWER(?) AND id != ?", name, excludeID).First(&org).Error
+	if err != nil {
+		return nil, err
+	}
+	return &org, nil
+}

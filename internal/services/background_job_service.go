@@ -137,7 +137,7 @@ func (s *BackgroundJobService) ProcessCampaignRun(jobID, campaignID string) {
 	s.campaignRepo.UpdateStatus(campaignID, "running")
 
 	// Get template
-	template, err := s.templateRepo.FindByID(campaign.TemplateID, campaign.OrganizationID)
+	template, err := s.templateRepo.FindByID(campaign.TemplateID, campaign.OrganizationID, campaign.CreatedBy)
 	if err != nil {
 		s.FailJob(jobID, "Template not found")
 		s.campaignRepo.UpdateStatus(campaignID, "failed")

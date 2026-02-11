@@ -30,6 +30,23 @@ func (s *ContactService) ValidateContact(contact *models.Contact) error {
 		return errors.New("at least one of email or phone is required")
 	}
 
+	// Validate negative numbers
+	if contact.BudgetMin < 0 {
+		return errors.New("minimum budget cannot be negative")
+	}
+	if contact.BudgetMax < 0 {
+		return errors.New("maximum budget cannot be negative")
+	}
+	if contact.Bedrooms < 0 {
+		return errors.New("bedrooms cannot be negative")
+	}
+	if contact.Bathrooms < 0 {
+		return errors.New("bathrooms cannot be negative")
+	}
+	if contact.SquareFeet < 0 {
+		return errors.New("square feet cannot be negative")
+	}
+
 	// Validate budget range
 	if contact.BudgetMin > 0 && contact.BudgetMax > 0 && contact.BudgetMin > contact.BudgetMax {
 		return errors.New("budget_min cannot be greater than budget_max")
@@ -110,17 +127,9 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 		headerMap[clean] = i
 	}
 
-	// Required headers
-	requiredHeaders := []string{"email", "phone"}
-	hasRequired := false
-	for _, req := range requiredHeaders {
-		if _, ok := headerMap[req]; ok {
-			hasRequired = true
-			break
-		}
-	}
-	if !hasRequired {
-		return nil, errors.New("CSV must contain at least one of: email, phone")
+	// Required headers - Email is required
+	if _, hasEmail := headerMap["email"]; !hasEmail {
+		return nil, errors.New("CSV must contain an 'email' column")
 	}
 
 	var contacts []models.Contact
@@ -189,7 +198,9 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 		if idx, ok := headerMap["square_feet"]; ok && idx < len(record) {
 			if val := strings.TrimSpace(record[idx]); val != "" {
 				if sqft, err := strconv.Atoi(val); err == nil {
-					contact.SquareFeet = sqft
+					if sqft >= 0 {
+						contact.SquareFeet = sqft
+					}
 				}
 			}
 		}

@@ -59,3 +59,10 @@ func (r *UserRepository) FindByOrgAndRole(orgID uuid.UUID, role string) ([]model
 	err := database.DB.Where("organization_id = ? AND role = ?", orgID, role).Find(&users).Error
 	return users, err
 }
+
+// DeactivateAllByOrg sets is_active to false for all users in an organization
+func (r *UserRepository) DeactivateAllByOrg(orgID uuid.UUID) error {
+	return database.DB.Model(&models.User{}).
+		Where("organization_id = ?", orgID).
+		Update("is_active", false).Error
+}

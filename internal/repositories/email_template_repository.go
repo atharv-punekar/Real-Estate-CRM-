@@ -12,19 +12,19 @@ func (r *EmailTemplateRepository) Create(template *models.EmailTemplate) error {
 	return database.DB.Create(template).Error
 }
 
-// FindByID finds an email template by ID within an organization
-func (r *EmailTemplateRepository) FindByID(id, orgID string) (*models.EmailTemplate, error) {
+// FindByID finds an email template by ID within an organization, filtered by creator
+func (r *EmailTemplateRepository) FindByID(id, orgID, createdBy string) (*models.EmailTemplate, error) {
 	var template models.EmailTemplate
-	if err := database.DB.Where("id = ? AND organization_id = ?", id, orgID).First(&template).Error; err != nil {
+	if err := database.DB.Where("id = ? AND organization_id = ? AND created_by = ?", id, orgID, createdBy).First(&template).Error; err != nil {
 		return nil, err
 	}
 	return &template, nil
 }
 
-// FindAllByOrg returns all email templates for an organization
-func (r *EmailTemplateRepository) FindAllByOrg(orgID string) ([]models.EmailTemplate, error) {
+// FindAllByOrg returns all email templates for an organization filtered by creator
+func (r *EmailTemplateRepository) FindAllByOrg(orgID, createdBy string) ([]models.EmailTemplate, error) {
 	var templates []models.EmailTemplate
-	if err := database.DB.Where("organization_id = ?", orgID).Order("created_at DESC").Find(&templates).Error; err != nil {
+	if err := database.DB.Where("organization_id = ? AND created_by = ?", orgID, createdBy).Order("created_at DESC").Find(&templates).Error; err != nil {
 		return nil, err
 	}
 	return templates, nil

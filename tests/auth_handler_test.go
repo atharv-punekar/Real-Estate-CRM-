@@ -42,7 +42,7 @@ func TestSuperAdminLogin_Success(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/superadmin/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -82,7 +82,7 @@ func TestSuperAdminLogin_InvalidCredentials(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/superadmin/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 401, resp.StatusCode)
 }
@@ -105,7 +105,7 @@ func TestSuperAdminLogin_InvalidEmail(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/superadmin/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 401, resp.StatusCode)
 }
@@ -148,7 +148,7 @@ func TestOrgAdminLogin_Success(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -199,7 +199,7 @@ func TestOrgAdminLogin_Deactivated(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode)
 }
@@ -240,7 +240,7 @@ func TestOrgAdminLogin_PasswordNotSet(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/login", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 403, resp.StatusCode)
 }
@@ -285,7 +285,7 @@ func TestActivatePassword_Success(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/activate", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
 
@@ -336,7 +336,7 @@ func TestActivatePassword_ExpiredToken(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/activate", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }
@@ -357,7 +357,7 @@ func TestActivatePassword_MissingFields(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/activate", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }
@@ -379,7 +379,7 @@ func TestActivatePassword_ShortPassword(t *testing.T) {
 	req := httptest.NewRequest("POST", "/auth/activate", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, -1) // -1 = no timeout
 	assert.NoError(t, err)
 	assert.Equal(t, 400, resp.StatusCode)
 }

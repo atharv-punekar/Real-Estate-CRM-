@@ -84,8 +84,9 @@ func CreateAudience(c *fiber.Ctx) error {
 // GetAudiences returns all audiences for an organization
 func GetAudiences(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 
-	audiences, err := audienceRepo.FindAllByOrg(orgID)
+	audiences, err := audienceRepo.FindAllByOrg(orgID, userID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch audiences"})
 	}
@@ -111,9 +112,10 @@ func GetAudiences(c *fiber.Ctx) error {
 // GetAudienceByID returns a single audience
 func GetAudienceByID(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	audienceID := c.Params("id")
 
-	audience, err := audienceRepo.FindByID(audienceID, orgID)
+	audience, err := audienceRepo.FindByID(audienceID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Audience not found"})
 	}
@@ -129,9 +131,10 @@ func GetAudienceByID(c *fiber.Ctx) error {
 // UpdateAudience updates an audience
 func UpdateAudience(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	audienceID := c.Params("id")
 
-	audience, err := audienceRepo.FindByID(audienceID, orgID)
+	audience, err := audienceRepo.FindByID(audienceID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Audience not found"})
 	}
@@ -165,7 +168,14 @@ func UpdateAudience(c *fiber.Ctx) error {
 // DeleteAudience deletes an audience
 func DeleteAudience(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	audienceID := c.Params("id")
+
+	// Verify ownership before deletion
+	_, err := audienceRepo.FindByID(audienceID, orgID, userID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Audience not found"})
+	}
 
 	if err := audienceRepo.Delete(audienceID, orgID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete audience"})
@@ -177,10 +187,11 @@ func DeleteAudience(c *fiber.Ctx) error {
 // AddContactsToAudience adds contacts to an audience
 func AddContactsToAudience(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	audienceID := c.Params("id")
 
-	// Verify audience exists
-	_, err := audienceRepo.FindByID(audienceID, orgID)
+	// Verify audience exists and belongs to the agent
+	_, err := audienceRepo.FindByID(audienceID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Audience not found"})
 	}
@@ -220,10 +231,11 @@ func AddContactsToAudience(c *fiber.Ctx) error {
 // RemoveContactsFromAudience removes contacts from an audience
 func RemoveContactsFromAudience(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	audienceID := c.Params("id")
 
-	// Verify audience exists
-	_, err := audienceRepo.FindByID(audienceID, orgID)
+	// Verify audience exists and belongs to the agent
+	_, err := audienceRepo.FindByID(audienceID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Audience not found"})
 	}
@@ -253,10 +265,11 @@ func RemoveContactsFromAudience(c *fiber.Ctx) error {
 // GetAudienceContacts returns paginated contacts for an audience
 func GetAudienceContacts(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	audienceID := c.Params("id")
 
-	// Verify audience exists
-	_, err := audienceRepo.FindByID(audienceID, orgID)
+	// Verify audience exists and belongs to the agent
+	_, err := audienceRepo.FindByID(audienceID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Audience not found"})
 	}

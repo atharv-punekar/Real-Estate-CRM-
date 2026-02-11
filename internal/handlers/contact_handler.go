@@ -3,10 +3,12 @@ package handlers
 import (
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/services"
+	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -42,21 +44,49 @@ func CreateContact(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	// Validate negative values
+	if err := utils.ValidateNonNegative(req.BudgetMin, "Minimum budget"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := utils.ValidateNonNegative(req.BudgetMax, "Maximum budget"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := utils.ValidateNonNegativeInt(req.Bedrooms, "Bedrooms"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := utils.ValidateNonNegativeInt(req.Bathrooms, "Bathrooms"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err := utils.ValidateNonNegativeInt(req.SquareFeet, "Square feet"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate budget range
+	if err := utils.ValidateBudgetRange(req.BudgetMin, req.BudgetMax); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Normalize email
+	normalizedEmail, err := utils.NormalizeEmail(req.Email)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	contact := models.Contact{
 		OrganizationID:    orgID,
 		CreatedBy:         userID,
-		FirstName:         req.FirstName,
-		LastName:          req.LastName,
-		Email:             req.Email,
-		Phone:             req.Phone,
+		FirstName:         strings.TrimSpace(req.FirstName),
+		LastName:          strings.TrimSpace(req.LastName),
+		Email:             normalizedEmail,
+		Phone:             strings.TrimSpace(req.Phone),
 		BudgetMin:         req.BudgetMin,
 		BudgetMax:         req.BudgetMax,
-		PropertyType:      req.PropertyType,
+		PropertyType:      strings.TrimSpace(req.PropertyType),
 		Bedrooms:          req.Bedrooms,
 		Bathrooms:         req.Bathrooms,
 		SquareFeet:        req.SquareFeet,
-		PreferredLocation: req.PreferredLocation,
-		Notes:             req.Notes,
+		PreferredLocation: strings.TrimSpace(req.PreferredLocation),
+		Notes:             strings.TrimSpace(req.Notes),
 	}
 
 	if err := contactService.CreateContact(&contact); err != nil {
@@ -69,40 +99,48 @@ func CreateContact(c *fiber.Ctx) error {
 	})
 }
 
-// GetContacts returns paginated contacts with optional search
+// GetContacts returns paginated contacts with optional search and sorting
 func GetContacts(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
 	search := c.Query("search", "")
+	sortBy := c.Query("sort_by", "")
+	sortOrder := c.Query("sort_order", "")
 
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 || limit > 100 {
-		limit = 20
-	}
+	// Validate pagination params
+	page, limit = utils.ValidatePaginationParams(page, limit)
 
-	contacts, total, err := contactRepo.FindAllByOrg(orgID, page, limit, search)
+	// Filter by creator (per-agent ownership)
+	contacts, total, err := contactRepo.FindAllByOrg(orgID, userID, page, limit, search, sortBy, sortOrder)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch contacts"})
 	}
 
+	// Calculate pagination metadata
+	pagination := utils.CalculatePagination(page, limit, total)
+
 	return c.JSON(fiber.Map{
-		"contacts": contacts,
-		"total":    total,
-		"page":     page,
-		"limit":    limit,
+		"contacts":     contacts,
+		"total_count":  pagination.Total,
+		"page":         pagination.Page,
+		"limit":        pagination.Limit,
+		"total_pages":  pagination.TotalPages,
+		"offset_start": pagination.OffsetStart,
+		"offset_end":   pagination.OffsetEnd,
 	})
 }
 
 // GetContactByID returns a single contact
 func GetContactByID(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	contactID := c.Params("id")
 
-	contact, err := contactRepo.FindByID(contactID, orgID)
+	// Verify ownership
+	contact, err := contactRepo.FindByID(contactID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Contact not found"})
 	}
@@ -113,9 +151,11 @@ func GetContactByID(c *fiber.Ctx) error {
 // UpdateContact updates a contact
 func UpdateContact(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	contactID := c.Params("id")
 
-	contact, err := contactRepo.FindByID(contactID, orgID)
+	// Verify ownership
+	contact, err := contactRepo.FindByID(contactID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Contact not found"})
 	}
@@ -190,7 +230,14 @@ func UpdateContact(c *fiber.Ctx) error {
 // DeleteContact soft deletes a contact
 func DeleteContact(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	contactID := c.Params("id")
+
+	// Verify ownership before deletion
+	_, err := contactRepo.FindByID(contactID, orgID, userID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Contact not found"})
+	}
 
 	if err := contactRepo.Delete(contactID, orgID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete contact"})

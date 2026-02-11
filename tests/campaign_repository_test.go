@@ -40,7 +40,7 @@ func TestCampaignRepository_FindByID_Success(t *testing.T) {
 	db.Create(&campaign)
 
 	// Find campaign
-	found, err := repo.FindByID(campaign.ID, org.ID.String())
+	found, err := repo.FindByID(campaign.ID, org.ID.String(), campaign.CreatedBy)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, found)
@@ -63,7 +63,7 @@ func TestCampaignRepository_FindByID_NotFound(t *testing.T) {
 
 	// Try to find non-existent campaign
 	fakeID := uuid.New().String()
-	found, err := repo.FindByID(fakeID, org.ID.String())
+	found, err := repo.FindByID(fakeID, org.ID.String(), uuid.New().String())
 
 	assert.Error(t, err)
 	assert.Nil(t, found)

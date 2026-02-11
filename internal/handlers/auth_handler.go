@@ -71,6 +71,15 @@ func OrgAdminLogin(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "Account is deactivated"})
 	}
 
+	// Check if organization is active
+	org, err := orgRepo.FindByID(user.OrganizationID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to verify organization status"})
+	}
+	if !org.IsActive {
+		return c.Status(403).JSON(fiber.Map{"error": "Organization is deactivated. Login not allowed."})
+	}
+
 	// Check if password is set
 	if !user.IsPasswordSet {
 		return c.Status(403).JSON(fiber.Map{"error": "Password not set. Please activate your account using the invite link."})
@@ -133,6 +142,15 @@ func ActivatePassword(c *fiber.Ctx) error {
 	// Check if password already set
 	if user.IsPasswordSet {
 		return c.Status(400).JSON(fiber.Map{"error": "Password already set. Please login instead."})
+	}
+
+	// Check if organization is active
+	org, err := orgRepo.FindByID(user.OrganizationID)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to verify organization status"})
+	}
+	if !org.IsActive {
+		return c.Status(403).JSON(fiber.Map{"error": "Organization is deactivated. Cannot activate account."})
 	}
 
 	// Hash password

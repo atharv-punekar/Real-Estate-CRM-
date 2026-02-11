@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"strings"
+
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
+	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -29,17 +32,35 @@ func CreateEmailTemplate(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	if req.Name == "" || req.Subject == "" || req.HtmlBody == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Name, subject, and html_body are required"})
+	// Validate and trim name
+	templateName := strings.TrimSpace(req.Name)
+	if err := utils.ValidateNotEmpty(templateName, "Template name"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate subject
+	templateSubject := strings.TrimSpace(req.Subject)
+	if err := utils.ValidateNotEmpty(templateSubject, "Subject"); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate template body (at least one required)
+	if err := utils.ValidatePlainTextTemplate(req.HtmlBody, req.PlainTextBody); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate no placeholder content
+	if err := utils.ValidateTemplateContent(req.FromName, req.Subject, req.HtmlBody, req.PlainTextBody); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	template := models.EmailTemplate{
 		OrganizationID: orgID,
-		Name:           req.Name,
-		Subject:        req.Subject,
-		Preheader:      req.Preheader,
-		FromName:       req.FromName,
-		ReplyTo:        req.ReplyTo,
+		Name:           templateName,
+		Subject:        templateSubject,
+		Preheader:      strings.TrimSpace(req.Preheader),
+		FromName:       strings.TrimSpace(req.FromName),
+		ReplyTo:        strings.TrimSpace(req.ReplyTo),
 		HtmlBody:       req.HtmlBody,
 		PlainTextBody:  req.PlainTextBody,
 		CreatedBy:      userID,
@@ -58,8 +79,9 @@ func CreateEmailTemplate(c *fiber.Ctx) error {
 // GetEmailTemplates returns all email templates for an organization
 func GetEmailTemplates(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 
-	templates, err := templateRepo.FindAllByOrg(orgID)
+	templates, err := templateRepo.FindAllByOrg(orgID, userID)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch email templates"})
 	}
@@ -70,9 +92,10 @@ func GetEmailTemplates(c *fiber.Ctx) error {
 // GetEmailTemplateByID returns a single email template
 func GetEmailTemplateByID(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	templateID := c.Params("id")
 
-	template, err := templateRepo.FindByID(templateID, orgID)
+	template, err := templateRepo.FindByID(templateID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Email template not found"})
 	}
@@ -83,9 +106,10 @@ func GetEmailTemplateByID(c *fiber.Ctx) error {
 // UpdateEmailTemplate updates an email template
 func UpdateEmailTemplate(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	templateID := c.Params("id")
 
-	template, err := templateRepo.FindByID(templateID, orgID)
+	template, err := templateRepo.FindByID(templateID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Email template not found"})
 	}
@@ -105,25 +129,43 @@ func UpdateEmailTemplate(c *fiber.Ctx) error {
 	}
 
 	if req.Name != nil {
-		template.Name = *req.Name
+		templateName := strings.TrimSpace(*req.Name)
+		if err := utils.ValidateNotEmpty(templateName, "Template name"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		template.Name = templateName
 	}
 	if req.Subject != nil {
-		template.Subject = *req.Subject
+		templateSubject := strings.TrimSpace(*req.Subject)
+		if err := utils.ValidateNotEmpty(templateSubject, "Subject"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		template.Subject = templateSubject
 	}
 	if req.Preheader != nil {
-		template.Preheader = *req.Preheader
+		template.Preheader = strings.TrimSpace(*req.Preheader)
 	}
 	if req.FromName != nil {
-		template.FromName = *req.FromName
+		template.FromName = strings.TrimSpace(*req.FromName)
 	}
 	if req.ReplyTo != nil {
-		template.ReplyTo = *req.ReplyTo
+		template.ReplyTo = strings.TrimSpace(*req.ReplyTo)
 	}
 	if req.HtmlBody != nil {
 		template.HtmlBody = *req.HtmlBody
 	}
 	if req.PlainTextBody != nil {
 		template.PlainTextBody = *req.PlainTextBody
+	}
+
+	// Validate template content after updates
+	if err := utils.ValidatePlainTextTemplate(template.HtmlBody, template.PlainTextBody); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Validate no placeholder content
+	if err := utils.ValidateTemplateContent(template.FromName, template.Subject, template.HtmlBody, template.PlainTextBody); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	if err := templateRepo.Update(template); err != nil {
@@ -151,9 +193,10 @@ func DeleteEmailTemplate(c *fiber.Ctx) error {
 // TestSendEmail sends a test email using a template
 func TestSendEmail(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
+	userID := c.Locals("user_id").(string)
 	templateID := c.Params("id")
 
-	template, err := templateRepo.FindByID(templateID, orgID)
+	template, err := templateRepo.FindByID(templateID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Email template not found"})
 	}
