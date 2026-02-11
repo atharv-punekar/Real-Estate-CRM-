@@ -96,6 +96,33 @@ func (r *ContactRepository) Delete(id, orgID string) error {
 		Update("is_active", false).Error
 }
 
+// DeleteWithRelationships deletes a contact and all its relationships (audiences, campaigns)
+func (r *ContactRepository) DeleteWithRelationships(contactID, orgID string) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		// 1. Remove contact from all audiences (audience_contact table)
+		if err := tx.Where("contact_id = ?", contactID).
+			Delete(&models.AudienceContact{}).Error; err != nil {
+			return err
+		}
+
+		// 2. Remove contact reference from campaigns (set contact_id to NULL)
+		if err := tx.Model(&models.Campaign{}).
+			Where("contact_id = ? AND organization_id = ?", contactID, orgID).
+			Update("contact_id", nil).Error; err != nil {
+			return err
+		}
+
+		// 3. Soft delete the contact (set is_active = false)
+		if err := tx.Model(&models.Contact{}).
+			Where("id = ? AND organization_id = ?", contactID, orgID).
+			Update("is_active", false).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+}
+
 // FindByEmailOrPhone checks if a contact with the given email or phone exists in the organization
 func (r *ContactRepository) FindByEmailOrPhone(email, phone, orgID string) (*models.Contact, error) {
 	var contact models.Contact

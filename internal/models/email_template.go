@@ -9,8 +9,8 @@ type EmailTemplate struct {
 	Name          string
 	Subject       string
 	Preheader     string
-	FromName      string
-	ReplyTo       string
+	FromName      *string // Optional
+	ReplyTo       *string // Optional
 	HtmlBody      string
 	PlainTextBody string
 

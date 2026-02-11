@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
 var (
@@ -19,23 +21,45 @@ func CreateEmailTemplate(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
 	var req struct {
-		Name          string `json:"name"`
-		Subject       string `json:"subject"`
-		Preheader     string `json:"preheader"`
-		FromName      string `json:"from_name"`
-		ReplyTo       string `json:"reply_to"`
-		HtmlBody      string `json:"html_body"`
-		PlainTextBody string `json:"plain_text_body"`
+		Name          string  `json:"name"`
+		Subject       string  `json:"subject"`
+		Preheader     string  `json:"preheader"`
+		FromName      *string `json:"from_name"` // Optional
+		ReplyTo       *string `json:"reply_to"`  // Optional
+		HtmlBody      string  `json:"html_body"`
+		PlainTextBody string  `json:"plain_text_body"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Validate and trim name
+	// Validate name (required, alphabets and spaces, unique)
 	templateName := strings.TrimSpace(req.Name)
-	if err := utils.ValidateNotEmpty(templateName, "Template name"); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	if templateName == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
+	}
+	if len(templateName) < 2 {
+		return c.Status(400).JSON(fiber.Map{"error": "name must be at least 2 characters long"})
+	}
+	// Check for alphabets and spaces only
+	for _, char := range templateName {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+			return c.Status(400).JSON(fiber.Map{"error": "name must contain only alphabetic characters and spaces"})
+		}
+	}
+	// Check for multiple consecutive spaces
+	if strings.Contains(templateName, "  ") {
+		return c.Status(400).JSON(fiber.Map{"error": "name cannot contain multiple consecutive spaces"})
+	}
+
+	// Check for duplicate name in organization
+	existing, err := templateRepo.FindByNameAndOrg(templateName, orgID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to check for duplicate template"})
+	}
+	if existing != nil && err == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "a template with this name already exists in your organization"})
 	}
 
 	// Validate subject
@@ -44,14 +68,11 @@ func CreateEmailTemplate(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Validate template body (at least one required)
-	if err := utils.ValidatePlainTextTemplate(req.HtmlBody, req.PlainTextBody); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Validate no placeholder content
-	if err := utils.ValidateTemplateContent(req.FromName, req.Subject, req.HtmlBody, req.PlainTextBody); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	// Validate template body (at least one required, not both empty)
+	htmlBody := strings.TrimSpace(req.HtmlBody)
+	plainTextBody := strings.TrimSpace(req.PlainTextBody)
+	if htmlBody == "" && plainTextBody == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "either html_body or plain_text_body must be provided"})
 	}
 
 	template := models.EmailTemplate{
@@ -59,10 +80,10 @@ func CreateEmailTemplate(c *fiber.Ctx) error {
 		Name:           templateName,
 		Subject:        templateSubject,
 		Preheader:      strings.TrimSpace(req.Preheader),
-		FromName:       strings.TrimSpace(req.FromName),
-		ReplyTo:        strings.TrimSpace(req.ReplyTo),
-		HtmlBody:       req.HtmlBody,
-		PlainTextBody:  req.PlainTextBody,
+		FromName:       req.FromName, // Optional, can be nil
+		ReplyTo:        req.ReplyTo,  // Optional, can be nil
+		HtmlBody:       htmlBody,
+		PlainTextBody:  plainTextBody,
 		CreatedBy:      userID,
 	}
 
@@ -130,8 +151,29 @@ func UpdateEmailTemplate(c *fiber.Ctx) error {
 
 	if req.Name != nil {
 		templateName := strings.TrimSpace(*req.Name)
-		if err := utils.ValidateNotEmpty(templateName, "Template name"); err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		if templateName == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+		}
+		if len(templateName) < 2 {
+			return c.Status(400).JSON(fiber.Map{"error": "name must be at least 2 characters long"})
+		}
+		// Check for alphabets and spaces only
+		for _, char := range templateName {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+				return c.Status(400).JSON(fiber.Map{"error": "name must contain only alphabetic characters and spaces"})
+			}
+		}
+		// Check for multiple consecutive spaces
+		if strings.Contains(templateName, "  ") {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot contain multiple consecutive spaces"})
+		}
+		// Check for duplicate name (excluding current template)
+		existing, err := templateRepo.FindByNameAndOrg(templateName, orgID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to check for duplicate template"})
+		}
+		if existing != nil && err == nil && existing.ID != templateID {
+			return c.Status(400).JSON(fiber.Map{"error": "a template with this name already exists in your organization"})
 		}
 		template.Name = templateName
 	}
@@ -146,10 +188,10 @@ func UpdateEmailTemplate(c *fiber.Ctx) error {
 		template.Preheader = strings.TrimSpace(*req.Preheader)
 	}
 	if req.FromName != nil {
-		template.FromName = strings.TrimSpace(*req.FromName)
+		template.FromName = req.FromName // Already a pointer
 	}
 	if req.ReplyTo != nil {
-		template.ReplyTo = strings.TrimSpace(*req.ReplyTo)
+		template.ReplyTo = req.ReplyTo // Already a pointer
 	}
 	if req.HtmlBody != nil {
 		template.HtmlBody = *req.HtmlBody
@@ -158,14 +200,9 @@ func UpdateEmailTemplate(c *fiber.Ctx) error {
 		template.PlainTextBody = *req.PlainTextBody
 	}
 
-	// Validate template content after updates
-	if err := utils.ValidatePlainTextTemplate(template.HtmlBody, template.PlainTextBody); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
-	}
-
-	// Validate no placeholder content
-	if err := utils.ValidateTemplateContent(template.FromName, template.Subject, template.HtmlBody, template.PlainTextBody); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	// Validate template body after updates (at least one required)
+	if strings.TrimSpace(template.HtmlBody) == "" && strings.TrimSpace(template.PlainTextBody) == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "either html_body or plain_text_body must be provided"})
 	}
 
 	if err := templateRepo.Update(template); err != nil {

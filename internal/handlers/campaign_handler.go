@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 var (
@@ -40,10 +42,32 @@ func CreateCampaign(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Validate and normalize campaign name
+	// Validate campaign name (required, alphabets and spaces, unique)
 	campaignName := strings.TrimSpace(req.Name)
-	if err := utils.ValidateNotEmpty(campaignName, "Campaign name"); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	if campaignName == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
+	}
+	if len(campaignName) < 2 {
+		return c.Status(400).JSON(fiber.Map{"error": "name must be at least 2 characters long"})
+	}
+	// Check for alphabets and spaces only
+	for _, char := range campaignName {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+			return c.Status(400).JSON(fiber.Map{"error": "name must contain only alphabetic characters and spaces"})
+		}
+	}
+	// Check for multiple consecutive spaces
+	if strings.Contains(campaignName, "  ") {
+		return c.Status(400).JSON(fiber.Map{"error": "name cannot contain multiple consecutive spaces"})
+	}
+
+	// Check for duplicate name in organization
+	existing, err := campaignRepo.FindByNameAndOrg(campaignName, orgID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to check for duplicate campaign"})
+	}
+	if existing != nil && err == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "a campaign with this name already exists in your organization"})
 	}
 
 	// Validate required fields
@@ -67,7 +91,7 @@ func CreateCampaign(c *fiber.Ctx) error {
 	}
 
 	// Verify template exists and belongs to the agent
-	_, err := templateRepo.FindByID(req.TemplateID, orgID, userID)
+	_, err = templateRepo.FindByID(req.TemplateID, orgID, userID)
 	if err != nil {
 		return c.Status(404).JSON(fiber.Map{"error": "Email template not found"})
 	}
@@ -213,9 +237,39 @@ func UpdateCampaign(c *fiber.Ctx) error {
 	}
 
 	if req.Name != nil {
-		campaign.Name = *req.Name
+		// Validate name format (alphabets and spaces only)
+		campaignName := strings.TrimSpace(*req.Name)
+		if campaignName == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+		}
+		if len(campaignName) < 2 {
+			return c.Status(400).JSON(fiber.Map{"error": "name must be at least 2 characters long"})
+		}
+		// Check for alphabets and spaces only
+		for _, char := range campaignName {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+				return c.Status(400).JSON(fiber.Map{"error": "name must contain only alphabetic characters and spaces"})
+			}
+		}
+		// Check for multiple consecutive spaces
+		if strings.Contains(campaignName, "  ") {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot contain multiple consecutive spaces"})
+		}
+		// Check for duplicate name (excluding current campaign)
+		existing, err := campaignRepo.FindByNameAndOrg(campaignName, orgID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to check for duplicate campaign"})
+		}
+		if existing != nil && err == nil && existing.ID != campaignID {
+			return c.Status(400).JSON(fiber.Map{"error": "a campaign with this name already exists in your organization"})
+		}
+		campaign.Name = campaignName
 	}
 	if req.ScheduledAt != nil {
+		// Reject campaign updates with past dates
+		if req.ScheduledAt.Before(time.Now()) {
+			return c.Status(400).JSON(fiber.Map{"error": "Cannot schedule campaign in the past. Please select a future date and time"})
+		}
 		campaign.ScheduledAt = *req.ScheduledAt
 	}
 

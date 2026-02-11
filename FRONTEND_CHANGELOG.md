@@ -5,6 +5,185 @@
 
 ---
 
+## 2026-02-11 (Update 7)
+
+### ⚠️ Campaign Validation Updates
+
+**Affected Endpoints:**
+- `POST /agent/campaigns` - Create campaign
+- `PUT /agent/campaigns/:id` - Update campaign
+
+**New Validation Rules:**
+
+#### 1. Campaign Name
+- **Alphabets and spaces only** (a-z, A-Z, space)
+- **Min 2 characters**
+- **No multiple consecutive spaces**
+- **Unique within organization** (case-insensitive)
+
+**Error Messages:**
+```json
+{"error": "name must contain only alphabetic characters and spaces"}
+{"error": "a campaign with this name already exists in your organization"}
+```
+
+#### 2. Scheduled Date/Time
+- **Cannot schedule campaigns in the past** (applies to both create and update)
+- Server validates against current time
+
+**Error Message:**
+```json
+{"error": "Cannot schedule campaign in the past. Please select a future date and time"}
+```
+
+---
+
+## 2026-02-11 (Update 6)
+
+### ⚠️ Email Template Validation Updates
+
+**Affected Endpoints:**
+- `POST /agent/templates` - Create template
+- `PUT /agent/templates/:id` - Update template
+
+**Major Changes:**
+
+#### 1. From Name & Reply To - Now Optional
+- ✅ `from_name` is **optional** (can be omitted or null)
+- ✅ `reply_to` is **optional** (can be omitted or null)
+- Frontend doesn't need to send these fields
+
+**Request Example:**
+```json
+{
+  "name": "Welcome Email",
+  "subject": "Welcome!",
+  "html_body": "<html>...</html>"
+  // from_name and reply_to omitted - no error
+}
+```
+
+#### 2. Template Name Validation
+- **Alphabets and spaces only** (a-z, A-Z, space)
+- **Min 2 characters**
+- **No multiple consecutive spaces**
+- **Unique within organization** (case-insensitive)
+
+**Error Messages:**
+```json
+{"error": "name must contain only alphabetic characters and spaces"}
+{"error": "a template with this name already exists in your organization"}
+```
+
+#### 3. Body Validation - Either/Or Required
+- **Either** `html_body` **OR** `plain_text_body` must be provided
+- Not both can be empty
+- Can provide both if needed
+
+**Error Message:**
+```json
+{"error": "either html_body or plain_text_body must be provided"}
+```
+
+---
+
+## 2026-02-11 (Update 5)
+
+### ✅ Cascading Contact Deletion
+
+**Affected Endpoint:**
+- `DELETE /agent/contacts/:id`
+
+**Major Change:**
+When a contact is deleted, it's now **automatically removed** from:
+1. **All audiences** (`audience_contact` entries deleted)
+2. **All campaigns** (`contact_id` set to NULL - campaign remains active)
+
+**What This Means:**
+- ✅ **No manual cleanup required** - deletion is atomic
+- ✅ **Transactional** - all operations succeed or all fail
+- ✅ **No orphaned data** - maintains data integrity
+
+**Campaign Behavior:**
+```json
+// Before contact deletion
+{
+  "id": "campaign-123",
+  "contact_id": "contact-456",
+  "audience_ids": ["aud-1"]
+}
+
+// After contact deleted
+{
+  "id": "campaign-123",
+  "contact_id": null,  // ← Contact reference removed
+  "audience_ids": ["aud-1"]  // ← Audiences unchanged
+}
+```
+
+**Frontend Changes:**
+- ✅ Single `DELETE` call handles everything
+- ✅ Refresh audience contact counts after deletion
+- ✅ Refresh campaign lists if showing contact_id
+
+**See:** `CASCADING_DELETE.md` for complete details
+
+---
+
+## 2026-02-11 (Update 4)
+
+### ✅ Audience Name Validation
+
+**Affected Endpoints:**
+- `POST /agent/audiences` - Create audience
+- `PUT /agent/audiences/:id` - Update audience
+
+**New Validation Rules:**
+- **Alphabets and spaces only** (a-z, A-Z, space)
+- **Min 2 characters**
+- **No multiple consecutive spaces**
+- **Unique within organization** (case-insensitive)
+
+**Error Messages:**
+```json
+{"error": "name is required"}
+{"error": "name must be at least 2 characters long"}
+{"error": "name must contain only alphabetic characters and spaces"}
+{"error": "name cannot contain multiple consecutive spaces"}
+{"error": "an audience with this name already exists in your organization"}
+```
+
+**JavaScript Validation:**
+```javascript
+function validateAudienceName(name) {
+  const errors = [];
+  
+  if (!name || !name.trim()) {
+    return 'Name is required';
+  }
+  
+  const trimmed = name.trim();
+  
+  if (trimmed.length < 2) {
+    return 'Name must be at least 2 characters long';
+  }
+  
+  // Alphabets and spaces only
+  if (!/^[a-zA-Z ]+$/.test(trimmed)) {
+    return 'Name must contain only alphabetic characters and spaces';
+  }
+  
+  // No multiple consecutive spaces
+  if (/  /.test(trimmed)) {
+    return 'Name cannot contain multiple consecutive spaces';
+  }
+  
+  return null;
+}
+```
+
+---
+
 ## 2026-02-11 (Update 3)
 
 ### ⚠️ STRICT VALIDATION RULES FOR CONTACT FORMS

@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
 	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 )
 
 var audienceRepo = &repository.AudienceRepository{}
@@ -32,14 +35,42 @@ func CreateAudience(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	// Validate name (required, alphabets only, unique)
 	if req.Name == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Name is required"})
+		return c.Status(400).JSON(fiber.Map{"error": "name is required"})
+	}
+
+	// Validate name format (alphabets and spaces only)
+	trimmedName := strings.TrimSpace(req.Name)
+	if len(trimmedName) < 2 {
+		return c.Status(400).JSON(fiber.Map{"error": "name must be at least 2 characters long"})
+	}
+
+	// Check for alphabets and spaces only
+	for _, char := range trimmedName {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+			return c.Status(400).JSON(fiber.Map{"error": "name must contain only alphabetic characters and spaces"})
+		}
+	}
+
+	// Check for multiple consecutive spaces
+	if strings.Contains(trimmedName, "  ") {
+		return c.Status(400).JSON(fiber.Map{"error": "name cannot contain multiple consecutive spaces"})
+	}
+
+	// Check for duplicate name in organization
+	existing, err := audienceRepo.FindByNameAndOrg(trimmedName, orgID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to check for duplicate audience"})
+	}
+	if existing != nil && err == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "an audience with this name already exists in your organization"})
 	}
 
 	// Create audience
 	audience := models.Audience{
 		OrganizationID: orgID,
-		Name:           req.Name,
+		Name:           trimmedName,
 		Description:    req.Description,
 		CreatedBy:      userID,
 	}
@@ -149,7 +180,38 @@ func UpdateAudience(c *fiber.Ctx) error {
 	}
 
 	if req.Name != nil {
-		audience.Name = *req.Name
+		// Validate name format (alphabets and spaces only)
+		trimmedName := strings.TrimSpace(*req.Name)
+		if trimmedName == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot be empty"})
+		}
+
+		if len(trimmedName) < 2 {
+			return c.Status(400).JSON(fiber.Map{"error": "name must be at least 2 characters long"})
+		}
+
+		// Check for alphabets and spaces only
+		for _, char := range trimmedName {
+			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+				return c.Status(400).JSON(fiber.Map{"error": "name must contain only alphabetic characters and spaces"})
+			}
+		}
+
+		// Check for multiple consecutive spaces
+		if strings.Contains(trimmedName, "  ") {
+			return c.Status(400).JSON(fiber.Map{"error": "name cannot contain multiple consecutive spaces"})
+		}
+
+		// Check for duplicate name in organization (excluding current audience)
+		existing, err := audienceRepo.FindByNameAndOrg(trimmedName, orgID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to check for duplicate audience"})
+		}
+		if existing != nil && err == nil && existing.ID != audienceID {
+			return c.Status(400).JSON(fiber.Map{"error": "an audience with this name already exists in your organization"})
+		}
+
+		audience.Name = trimmedName
 	}
 	if req.Description != nil {
 		audience.Description = *req.Description

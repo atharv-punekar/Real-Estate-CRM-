@@ -233,7 +233,8 @@ func DeleteContact(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Contact not found"})
 	}
 
-	if err := contactRepo.Delete(contactID, orgID); err != nil {
+	// Delete contact and all its relationships (audiences, campaigns)
+	if err := contactRepo.DeleteWithRelationships(contactID, orgID); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete contact"})
 	}
 

@@ -100,6 +100,13 @@ func (r *AudienceRepository) CountContactsByAudience(audienceID string) (int64, 
 	return count, err
 }
 
+// FindByNameAndOrg finds an audience by name within an organization
+func (r *AudienceRepository) FindByNameAndOrg(name, orgID string) (*models.Audience, error) {
+	var audience models.Audience
+	err := database.DB.Where("LOWER(name) = LOWER(?) AND organization_id = ?", name, orgID).First(&audience).Error
+	return &audience, err
+}
+
 func (r *AudienceRepository) DB() *gorm.DB {
 	return database.DB
 }

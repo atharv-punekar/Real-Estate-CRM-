@@ -40,11 +40,9 @@ func (r *EmailTemplateRepository) Delete(id, orgID string) error {
 	return database.DB.Where("id = ? AND organization_id = ?", id, orgID).Delete(&models.EmailTemplate{}).Error
 }
 
-// FindByName finds a template by name within an organization
-func (r *EmailTemplateRepository) FindByName(name, orgID string) (*models.EmailTemplate, error) {
+// FindByNameAndOrg finds a template by name within an organization (case-insensitive)
+func (r *EmailTemplateRepository) FindByNameAndOrg(name, orgID string) (*models.EmailTemplate, error) {
 	var template models.EmailTemplate
-	if err := database.DB.Where("name = ? AND organization_id = ?", name, orgID).First(&template).Error; err != nil {
-		return nil, err
-	}
-	return &template, nil
+	err := database.DB.Where("LOWER(name) = LOWER(?) AND organization_id = ?", name, orgID).First(&template).Error
+	return &template, err
 }

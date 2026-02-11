@@ -171,3 +171,10 @@ func (r *CampaignRepository) GetRecipientContacts(campaign *models.Campaign) ([]
 
 	return contactIDs, nil
 }
+
+// FindByNameAndOrg finds a campaign by name within an organization (case-insensitive)
+func (r *CampaignRepository) FindByNameAndOrg(name, orgID string) (*models.Campaign, error) {
+	var campaign models.Campaign
+	err := database.DB.Where("LOWER(name) = LOWER(?) AND organization_id = ?", name, orgID).First(&campaign).Error
+	return &campaign, err
+}
