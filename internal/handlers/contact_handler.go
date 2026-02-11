@@ -308,7 +308,7 @@ func ImportContactsCSV(c *fiber.Ctx) error {
 	}
 
 	// Bulk create contacts
-	successCount, skipCount, err := contactService.BulkCreateContacts(contacts)
+	successCount, skipCount, rowErrors, err := contactService.BulkCreateContacts(contacts)
 	if err != nil {
 		if job.ID != "" {
 			bgJobService.FailJob(job.ID, err.Error())
@@ -319,6 +319,9 @@ func ImportContactsCSV(c *fiber.Ctx) error {
 	// Update job progress and finish
 	if job.ID != "" {
 		job.ProcessedRecords = &successCount
+		if len(rowErrors) > 0 {
+			job.ErrorMessage = strings.Join(rowErrors, "; ")
+		}
 		database.DB.Save(&job)
 		bgJobService.FinishJob(job.ID)
 	}
@@ -331,6 +334,7 @@ func ImportContactsCSV(c *fiber.Ctx) error {
 		"total_records":    totalRecords,
 		"imported_records": successCount,
 		"skipped_records":  skipCount,
+		"errors":           rowErrors,
 	})
 }
 

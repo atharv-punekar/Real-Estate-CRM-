@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
@@ -76,7 +77,7 @@ func (s *BackgroundJobService) ProcessCSVImport(jobID, orgID, userID string, csv
 	}
 
 	// Bulk create contacts
-	successCount, skipCount, err := s.contactService.BulkCreateContacts(contacts)
+	successCount, skipCount, rowErrors, err := s.contactService.BulkCreateContacts(contacts)
 	if err != nil {
 		s.FailJob(jobID, err.Error())
 		s.notifService.NotifyCSVImportFailed(orgID, userID, err.Error())
@@ -86,6 +87,9 @@ func (s *BackgroundJobService) ProcessCSVImport(jobID, orgID, userID string, csv
 	// Update job progress and finish
 	if job != nil {
 		job.ProcessedRecords = &successCount
+		if len(rowErrors) > 0 {
+			job.ErrorMessage = strings.Join(rowErrors, "; ")
+		}
 		s.jobRepo.Update(job)
 	}
 	s.FinishJob(jobID)

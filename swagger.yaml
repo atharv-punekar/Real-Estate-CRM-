@@ -224,6 +224,7 @@ paths:
                   total_records: {type: integer}
                   imported_records: {type: integer}
                   skipped_records: {type: integer}
+                  errors: {type: array, items: {type: string}}
 
   /agent/audiences:
     get:

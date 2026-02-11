@@ -23,7 +23,11 @@
   "message": "CSV import completed",
   "total_records": 100,
   "imported_records": 85,
-  "skipped_records": 15
+  "skipped_records": 15,
+  "errors": [
+    "Row 3: Duplicate email: used@example.com",
+    "Row 12: Missing phone number"
+  ]
 }
 ```
 

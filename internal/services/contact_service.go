@@ -475,22 +475,29 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 	return contacts, nil
 }
 
-// BulkCreateContacts creates multiple contacts, skipping duplicates
-func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int, error) {
+// BulkCreateContacts creates multiple contacts, skipping duplicates and returning errors
+func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int, []string, error) {
 	successCount := 0
 	skipCount := 0
+	var errorMessages []string
 
 	for i, contact := range contacts {
+		rowNum := i + 2 // Header is row 1, 0-indexed array starts at row 2
+
 		// Check for duplicate email
 		if contact.Email != "" {
 			existing, err := s.contactRepo.FindByEmailOrPhone(contact.Email, "", contact.OrganizationID)
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				fmt.Printf("Row %d: Error checking duplicate email: %v\n", i+2, err)
+				msg := fmt.Sprintf("Row %d: Error checking duplicate email: %v", rowNum, err)
+				fmt.Println(msg)
+				errorMessages = append(errorMessages, msg)
 				skipCount++
 				continue
 			}
 			if existing != nil {
-				fmt.Printf("Row %d: Skipped - duplicate email: %s\n", i+2, contact.Email)
+				msg := fmt.Sprintf("Row %d: Skipped - duplicate email: %s", rowNum, contact.Email)
+				fmt.Println(msg)
+				errorMessages = append(errorMessages, msg)
 				skipCount++
 				continue
 			}
@@ -498,7 +505,9 @@ func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int
 
 		// Create contact
 		if err := s.contactRepo.Create(&contact); err != nil {
-			fmt.Printf("Row %d: Failed to create contact: %v\n", i+2, err)
+			msg := fmt.Sprintf("Row %d: Failed to create contact: %v", rowNum, err)
+			fmt.Println(msg)
+			errorMessages = append(errorMessages, msg)
 			skipCount++
 			continue
 		}
@@ -510,5 +519,5 @@ func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int
 
 	fmt.Printf("Bulk create completed: %d success, %d skipped\n", successCount, skipCount)
 
-	return successCount, skipCount, nil
+	return successCount, skipCount, errorMessages, nil
 }
