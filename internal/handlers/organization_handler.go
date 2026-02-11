@@ -32,7 +32,7 @@ func CreateOrganization(c *fiber.Ctx) error {
 
 	// Trim and validate organization name
 	orgName := strings.TrimSpace(req.Name)
-	if err := utils.ValidateNotEmpty(orgName, "Organization name"); err != nil {
+	if err := utils.ValidateOrganizationName(orgName); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 

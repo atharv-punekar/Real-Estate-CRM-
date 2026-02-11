@@ -103,6 +103,29 @@ func ValidateTemplateContent(fromName, subject, htmlBody, plainTextBody string) 
 	return nil
 }
 
+// ValidateOrganizationName validates that organization name contains only alphabetic characters and spaces
+func ValidateOrganizationName(name string) error {
+	trimmed := strings.TrimSpace(name)
+
+	if trimmed == "" {
+		return errors.New("organization name cannot be empty")
+	}
+
+	// Check that name contains only alphabets and spaces
+	for _, char := range trimmed {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || char == ' ') {
+			return errors.New("organization name can only contain alphabetic characters and spaces")
+		}
+	}
+
+	// Ensure no multiple consecutive spaces
+	if strings.Contains(trimmed, "  ") {
+		return errors.New("organization name cannot contain multiple consecutive spaces")
+	}
+
+	return nil
+}
+
 // ValidateAgentName validates that name contains only alphabets and exactly one whitespace between first and last name
 func ValidateAgentName(name string) error {
 	trimmed := strings.TrimSpace(name)
@@ -215,46 +238,42 @@ func ValidatePassword(password string) error {
 		return errors.New("password must not exceed 20 characters")
 	}
 
-	// Check for at least one lowercase letter
 	hasLower := false
+	hasDigit := false
+	hasSpecial := false
+
+	specialChars := "!@#$%^&*()_+-=[]{}|;:,.<>?/~`"
+
 	for _, char := range password {
 		if char >= 'a' && char <= 'z' {
 			hasLower = true
-			break
 		}
-	}
-	if !hasLower {
-		return errors.New("password must contain at least one lowercase letter")
-	}
-
-	// Check for at least one numeric digit
-	hasDigit := false
-	for _, char := range password {
 		if char >= '0' && char <= '9' {
 			hasDigit = true
-			break
 		}
-	}
-	if !hasDigit {
-		return errors.New("password must contain at least one numeric digit")
-	}
-
-	// Check for at least one special character
-	hasSpecial := false
-	specialChars := "!@#$%^&*()_+-=[]{}|;:,.<>?/~`"
-	for _, char := range password {
-		for _, special := range specialChars {
-			if char == special {
+		for _, sp := range specialChars {
+			if char == sp {
 				hasSpecial = true
 				break
 			}
 		}
-		if hasSpecial {
-			break
-		}
+	}
+
+	// Build a single combined error message
+	var missing []string
+
+	if !hasLower {
+		missing = append(missing, "one lowercase letter")
+	}
+	if !hasDigit {
+		missing = append(missing, "one numeric digit")
 	}
 	if !hasSpecial {
-		return errors.New("password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?/~`)")
+		missing = append(missing, "one special character")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("password must contain at least: %s", strings.Join(missing, ", "))
 	}
 
 	return nil
