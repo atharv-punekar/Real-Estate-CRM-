@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"strconv"
+
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/config"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/services"
@@ -37,12 +39,25 @@ func SuperAdminCreateAgent(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
-	if req.Name == "" || req.Email == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Name & Email required"})
+	// Validate name with strict rules: only alphabets and exactly one space
+	if err := utils.ValidateAgentName(req.Name); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	if !utils.IsValidEmail(req.Email) {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid email format"})
+	// Validate email with strict rules: lowercase letters/numbers, exactly 1 @, simple domain
+	if err := utils.ValidateAgentEmail(req.Email); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Check if organization is active
+	if !org.IsActive {
+		return c.Status(403).JSON(fiber.Map{"error": "Cannot add agents. Organization is inactive"})
+	}
+
+	// Check name uniqueness within organization
+	existingName, _ := userRepo.FindByNameAndOrg(req.Name, orgUUID)
+	if existingName != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "An agent with this name already exists in this organization"})
 	}
 
 	// Validate role
@@ -101,12 +116,29 @@ func SuperAdminGetAgents(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid organization ID"})
 	}
 
-	users, err := userRepo.FindAllByOrg(orgUUID)
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+
+	// Validate pagination params
+	page, limit = utils.ValidatePaginationParams(page, limit)
+
+	users, total, err := userRepo.FindAllByOrgPaginated(orgUUID, page, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch agents"})
 	}
 
-	return c.JSON(users)
+	// Calculate pagination metadata
+	pagination := utils.CalculatePagination(page, limit, total)
+
+	return c.JSON(fiber.Map{
+		"agents":       users,
+		"total_count":  pagination.Total,
+		"page":         pagination.Page,
+		"limit":        pagination.Limit,
+		"total_pages":  pagination.TotalPages,
+		"offset_start": pagination.OffsetStart,
+		"offset_end":   pagination.OffsetEnd,
+	})
 }
 
 // -------------------------
@@ -134,7 +166,18 @@ func SuperAdminUpdateAgent(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
+	// Update name with strict validation
 	if req.Name != "" {
+		if err := utils.ValidateAgentName(req.Name); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// Check name uniqueness within organization (excluding current user)
+		existingName, _ := userRepo.FindByNameAndOrgExcluding(req.Name, user.OrganizationID, userID)
+		if existingName != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "An agent with this name already exists in this organization"})
+		}
+
 		user.Name = req.Name
 	}
 

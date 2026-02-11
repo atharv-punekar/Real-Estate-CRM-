@@ -123,11 +123,21 @@ func ValidateAgentName(name string) error {
 		return errors.New("name must contain exactly one space between first name and surname")
 	}
 
-	// Check that each part contains only alphabets
-	for _, part := range parts {
+	// Check that each part contains only alphabets and has minimum length
+	for i, part := range parts {
 		if part == "" {
 			return errors.New("name must contain exactly one space between first name and surname")
 		}
+
+		// Minimum length check (at least 2 characters)
+		if len(part) < 2 {
+			if i == 0 {
+				return errors.New("first name must be at least 2 characters long")
+			}
+			return errors.New("last name must be at least 2 characters long")
+		}
+
+		// Alphabets only check
 		for _, char := range part {
 			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
 				return errors.New("name must contain only alphabetic characters")
@@ -186,6 +196,65 @@ func ValidateAgentEmail(email string) error {
 				return errors.New("email domain must contain only lowercase letters and numbers")
 			}
 		}
+	}
+
+	return nil
+}
+
+// ValidatePassword validates password strength with strict requirements
+func ValidatePassword(password string) error {
+	if password == "" {
+		return errors.New("password cannot be empty")
+	}
+
+	// Check length constraints
+	if len(password) < 6 {
+		return errors.New("password must be at least 6 characters long")
+	}
+	if len(password) > 20 {
+		return errors.New("password must not exceed 20 characters")
+	}
+
+	// Check for at least one lowercase letter
+	hasLower := false
+	for _, char := range password {
+		if char >= 'a' && char <= 'z' {
+			hasLower = true
+			break
+		}
+	}
+	if !hasLower {
+		return errors.New("password must contain at least one lowercase letter")
+	}
+
+	// Check for at least one numeric digit
+	hasDigit := false
+	for _, char := range password {
+		if char >= '0' && char <= '9' {
+			hasDigit = true
+			break
+		}
+	}
+	if !hasDigit {
+		return errors.New("password must contain at least one numeric digit")
+	}
+
+	// Check for at least one special character
+	hasSpecial := false
+	specialChars := "!@#$%^&*()_+-=[]{}|;:,.<>?/~`"
+	for _, char := range password {
+		for _, special := range specialChars {
+			if char == special {
+				hasSpecial = true
+				break
+			}
+		}
+		if hasSpecial {
+			break
+		}
+	}
+	if !hasSpecial {
+		return errors.New("password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?/~`)")
 	}
 
 	return nil

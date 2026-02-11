@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
@@ -69,12 +70,29 @@ func CreateOrganization(c *fiber.Ctx) error {
 }
 
 func GetOrganizations(c *fiber.Ctx) error {
-	orgs, err := orgRepo.FindAll()
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+
+	// Validate pagination params
+	page, limit = utils.ValidatePaginationParams(page, limit)
+
+	orgs, total, err := orgRepo.FindAllPaginated(page, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch organizations"})
 	}
 
-	return c.JSON(orgs)
+	// Calculate pagination metadata
+	pagination := utils.CalculatePagination(page, limit, total)
+
+	return c.JSON(fiber.Map{
+		"organizations": orgs,
+		"total_count":   pagination.Total,
+		"page":          pagination.Page,
+		"limit":         pagination.Limit,
+		"total_pages":   pagination.TotalPages,
+		"offset_start":  pagination.OffsetStart,
+		"offset_end":    pagination.OffsetEnd,
+	})
 }
 
 func UpdateOrganization(c *fiber.Ctx) error {
@@ -116,12 +134,17 @@ func UpdateOrganization(c *fiber.Ctx) error {
 		org.Name = orgName
 	}
 
-	// Track if organization is being deactivated
+	// Track if organization is being deactivated or reactivated
 	var orgDeactivated bool
+	var orgReactivated bool
 	if req.IsActive != nil {
 		// Check if organization is being deactivated
 		if org.IsActive && !*req.IsActive {
 			orgDeactivated = true
+		}
+		// Check if organization is being reactivated
+		if !org.IsActive && *req.IsActive {
+			orgReactivated = true
 		}
 		org.IsActive = *req.IsActive
 	}
@@ -143,6 +166,22 @@ func UpdateOrganization(c *fiber.Ctx) error {
 			"organization":       org,
 			"message":            "Organization deactivated successfully",
 			"agents_deactivated": true,
+		})
+	}
+
+	// If organization was reactivated, reactivate all agents in that organization
+	if orgReactivated {
+		if err := userRepo.ReactivateAllByOrg(id); err != nil {
+			// Log error but don't fail the request since org is already updated
+			return c.JSON(fiber.Map{
+				"organization": org,
+				"warning":      "Organization updated but failed to reactivate agents",
+			})
+		}
+		return c.JSON(fiber.Map{
+			"organization":       org,
+			"message":            "Organization reactivated successfully",
+			"agents_reactivated": true,
 		})
 	}
 

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
@@ -65,6 +66,12 @@ func CreateAgent(c *fiber.Ctx) error {
 		return c.Status(403).JSON(fiber.Map{"error": "Cannot add agents. Organization is inactive"})
 	}
 
+	// Check name uniqueness within organization
+	existingName, _ := userRepo.FindByNameAndOrg(agentName, orgUUID)
+	if existingName != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "An agent with this name already exists in this organization"})
+	}
+
 	// Check global email uniqueness
 	existing, _ := userRepo.FindByEmail(normalizedEmail)
 	if existing != nil {
@@ -127,12 +134,29 @@ func GetAgents(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid organization ID"})
 	}
 
-	users, err := userRepo.FindAllByOrg(orgUUID)
+	page, _ := strconv.Atoi(c.Query("page", "1"))
+	limit, _ := strconv.Atoi(c.Query("limit", "20"))
+
+	// Validate pagination params
+	page, limit = utils.ValidatePaginationParams(page, limit)
+
+	users, total, err := userRepo.FindAllByOrgPaginated(orgUUID, page, limit)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch agents"})
 	}
 
-	return c.JSON(users)
+	// Calculate pagination metadata
+	pagination := utils.CalculatePagination(page, limit, total)
+
+	return c.JSON(fiber.Map{
+		"agents":       users,
+		"total_count":  pagination.Total,
+		"page":         pagination.Page,
+		"limit":        pagination.Limit,
+		"total_pages":  pagination.TotalPages,
+		"offset_start": pagination.OffsetStart,
+		"offset_end":   pagination.OffsetEnd,
+	})
 }
 
 func UpdateAgent(c *fiber.Ctx) error {
@@ -192,6 +216,13 @@ func UpdateAgent(c *fiber.Ctx) error {
 		if err := utils.ValidateAgentName(agentName); err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
+
+		// Check name uniqueness within organization (excluding current agent)
+		existingName, _ := userRepo.FindByNameAndOrgExcluding(agentName, agent.OrganizationID, id)
+		if existingName != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "An agent with this name already exists in this organization"})
+		}
+
 		agent.Name = agentName
 	}
 

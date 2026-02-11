@@ -124,8 +124,9 @@ func ActivatePassword(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Token and password are required"})
 	}
 
-	if len(req.Password) < 8 {
-		return c.Status(400).JSON(fiber.Map{"error": "Password must be at least 8 characters"})
+	// Validate password strength
+	if err := utils.ValidatePassword(req.Password); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	// Find user by invite token

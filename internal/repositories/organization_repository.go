@@ -19,6 +19,22 @@ func (OrganizationRepository) FindAll() ([]models.Organization, error) {
 	return orgs, err
 }
 
+// FindAllPaginated returns paginated organizations
+func (OrganizationRepository) FindAllPaginated(page, limit int) ([]models.Organization, int64, error) {
+	var orgs []models.Organization
+	var total int64
+
+	// Count total
+	if err := database.DB.Model(&models.Organization{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated results
+	offset := (page - 1) * limit
+	err := database.DB.Offset(offset).Limit(limit).Order("created_at DESC").Find(&orgs).Error
+	return orgs, total, err
+}
+
 func (OrganizationRepository) Update(org *models.Organization) error {
 	return database.DB.Save(org).Error
 }
