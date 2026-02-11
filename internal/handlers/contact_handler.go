@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
 
+	"github.com/atharvpunekar/real_estate_crm_backend/internal/database"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/services"
@@ -245,6 +248,11 @@ func DeleteContact(c *fiber.Ctx) error {
 func ImportContactsCSV(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
 	userID := c.Locals("user_id").(string)
+	// Verify organization exists to avoid foreign key errors in background_job_log
+	var org models.Organization
+	if err := database.DB.Where("id = ?", orgID).First(&org).Error; err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid organization session. Please log in again."})
+	}
 
 	// Get uploaded file
 	file, err := c.FormFile("file")
@@ -273,22 +281,56 @@ func ImportContactsCSV(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to read file content"})
 	}
 
-	// Create background job
+	// Create job record for audit
 	job := models.BackgroundJobLog{
 		JobType:        "csv_import",
 		OrganizationID: orgID,
-		Status:         "queued",
+		Status:         "running",
 	}
 	if err := bgJobRepo.Create(&job); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to create import job"})
+		fmt.Printf("Error creating audit job: %v\n", err)
 	}
 
-	// Process CSV in background
-	go bgJobService.ProcessCSVImport(job.ID, orgID, userID, csvData)
+	// Parse CSV
+	reader := bytes.NewReader(csvData)
+	contacts, err := contactService.ParseCSV(reader, orgID, userID)
+	if err != nil {
+		if job.ID != "" {
+			bgJobService.FailJob(job.ID, err.Error())
+		}
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
 
-	return c.Status(202).JSON(fiber.Map{
-		"message": "CSV import started",
-		"job_id":  job.ID,
+	totalRecords := len(contacts)
+	if job.ID != "" {
+		job.TotalRecords = &totalRecords
+		database.DB.Save(&job)
+	}
+
+	// Bulk create contacts
+	successCount, skipCount, err := contactService.BulkCreateContacts(contacts)
+	if err != nil {
+		if job.ID != "" {
+			bgJobService.FailJob(job.ID, err.Error())
+		}
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Update job progress and finish
+	if job.ID != "" {
+		job.ProcessedRecords = &successCount
+		database.DB.Save(&job)
+		bgJobService.FinishJob(job.ID)
+	}
+
+	// Notify user via system notification as well
+	notifService.NotifyCSVImportCompleted(orgID, userID, successCount)
+
+	return c.JSON(fiber.Map{
+		"message":          "CSV import completed",
+		"total_records":    totalRecords,
+		"imported_records": successCount,
+		"skipped_records":  skipCount,
 	})
 }
 

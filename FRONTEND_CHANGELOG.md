@@ -5,6 +5,68 @@
 
 ---
 
+## 2026-02-11 (Update 8)
+
+### 🚀 CSV Import is now SYNCHRONOUS
+
+**Affected Endpoints:**
+- `POST /agent/contacts/import`
+
+**What Changed:**
+- The API now waits for the import to finish before sending a response.
+- **NO POLLING REQUIRED**: You no longer need to call a separate status API.
+- The response directly returns the counts of imported and skipped records.
+
+**Response Example:**
+```json
+{
+  "message": "CSV import completed",
+  "total_records": 100,
+  "imported_records": 85,
+  "skipped_records": 15
+}
+```
+
+---
+
+### 🔒 Removed: Background Job Status API
+- `GET /agent/jobs/:id` has been **removed** as it is no longer needed for CSV imports.
+
+---
+
+### 🛡️ Security Check: Stale Organizations
+
+**Affected Endpoints:**
+- `POST /agent/contacts/import`
+
+**What Changed:**
+- The backend now strictly verifies that the `organization_id` in your JWT token actually exists in the database.
+- If your database was reset/wiped but your browser kept an old token, you will now get a clear error instead of a generic database failure.
+
+**New Error Message:**
+```json
+{"error": "Invalid organization session. Please log in again."}
+```
+
+**Action Required:** If you see this error, simply log out and log back in.
+
+---
+
+## 2026-02-11 (Update 9)
+
+### ✅ Relaxed Contact Name Uniqueness
+
+**Affected Endpoints:**
+- `POST /agent/contacts`
+- `POST /agent/contacts/import`
+
+**What Changed:**
+- You can now create multiple contacts with the **same name** (e.g., "John Doe") within an organization.
+- **Uniqueness is still enforced on Email and Phone Number.**
+- The error `contact with this name already exists in your organization` has been removed.
+
+---
+
 ## 2026-02-11 (Update 7)
 
 ### ⚠️ Campaign Validation Updates

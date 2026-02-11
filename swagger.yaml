@@ -1,0 +1,388 @@
+openapi: 3.0.0
+info:
+  title: Real Estate CRM API
+  description: Comprehensive API documentation for the Real Estate CRM Backend.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ContactCreate:
+      type: object
+      required:
+        - first_name
+        - last_name
+        - email
+        - phone
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        budget_min:
+          type: number
+        budget_max:
+          type: number
+        property_type:
+          type: string
+        bedrooms:
+          type: integer
+        bathrooms:
+          type: integer
+        square_feet:
+          type: integer
+        preferred_location:
+          type: string
+
+    AudienceCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        property_type:
+          type: array
+          items:
+            type: string
+        bedrooms:
+          type: array
+          items:
+            type: integer
+        bathrooms:
+          type: array
+          items:
+            type: integer
+        preferred_location:
+          type: array
+          items:
+            type: string
+        min_budget:
+          type: number
+        max_budget:
+          type: number
+
+    EmailTemplateCreate:
+      type: object
+      required:
+        - name
+        - subject
+      properties:
+        name:
+          type: string
+        subject:
+          type: string
+        preheader:
+          type: string
+        from_name:
+          type: string
+          nullable: true
+        reply_to:
+          type: string
+          nullable: true
+        html_body:
+          type: string
+        plain_text_body:
+          type: string
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/superadmin/login:
+    post:
+      tags:
+        - Auth
+      summary: Super Admin Login
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+  /auth/orgadmin/login:
+    post:
+      tags:
+        - Auth
+      summary: Org Admin/Agent Login
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+  /auth/activate:
+    post:
+      tags:
+        - Auth
+      summary: Activate Account / Set Password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+      responses:
+        200:
+          description: Account activated successfully
+
+  /agent/contacts:
+    get:
+      tags: [Agents]
+      summary: List Contacts
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, default: 1}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 10}
+      responses:
+        200:
+          description: List of contacts
+    post:
+      tags: [Agents]
+      summary: Create Contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ContactCreate'}
+      responses:
+        201:
+          description: Contact created
+
+  /agent/contacts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Agents]
+      summary: Get Contact by ID
+      responses:
+        200: {description: Contact details}
+    put:
+      tags: [Agents]
+      summary: Update Contact
+      responses:
+        200: {description: Contact updated}
+    delete:
+      tags: [Agents]
+      summary: Delete Contact
+      responses:
+        200: {description: Contact deleted}
+  /agent/contacts/import:
+    post:
+      tags: [Agents]
+      summary: Import Contacts from CSV
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        200:
+          description: Import completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: {type: string}
+                  total_records: {type: integer}
+                  imported_records: {type: integer}
+                  skipped_records: {type: integer}
+
+  /agent/audiences:
+    get:
+      tags: [Agents]
+      summary: List Audiences
+      responses:
+        200: {description: List of audiences}
+    post:
+      tags: [Agents]
+      summary: Create Audience
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AudienceCreate'}
+      responses:
+        201: {description: Audience created
+
+  /agent/email-templates:
+    get:
+      tags: [Agents]
+      summary: List Email Templates
+      responses:
+        200: {description: List of templates}
+    post:
+      tags: [Agents]
+      summary: Create Email Template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EmailTemplateCreate'}
+      responses:
+        201: {description: Template created
+
+  /agent/campaigns:
+    get:
+      tags: [Agents]
+      summary: List Campaigns
+      responses:
+        200: {description: List of campaigns}
+    post:
+      tags: [Agents]
+      summary: Create Campaign
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CampaignCreate'}
+      responses:
+        201: {description: Campaign created
+
+
+  /orgadmin/agents:
+    get:
+      tags: [Org Admin]
+      summary: List Agents
+      responses:
+        200: {description: List of agents}
+    post:
+      tags: [Org Admin]
+      summary: Create Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentCreate'}
+      responses:
+        201: {description: Agent created
+
+  /superadmin/orgs:
+    get:
+      tags: [Super Admin]
+      summary: List Organizations
+      responses:
+        200: {description: List of organizations}
+    post:
+      tags: [Super Admin]
+      summary: Create Organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+      responses:
+        201: {description: Organization created
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ContactCreate:
+      type: object
+      required: [first_name, last_name, email, phone]
+      properties:
+        first_name: {type: string}
+        last_name: {type: string}
+        email: {type: string, format: email}
+        phone: {type: string}
+        budget_min: {type: number}
+        budget_max: {type: number}
+        property_type: {type: string}
+        bedrooms: {type: integer}
+        bathrooms: {type: integer}
+        square_feet: {type: integer}
+        preferred_location: {type: string}
+
+    AudienceCreate:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        property_type: {type: array, items: {type: string}}
+        bedrooms: {type: array, items: {type: integer}}
+        bathrooms: {type: array, items: {type: integer}}
+        preferred_location: {type: array, items: {type: string}}
+        min_budget: {type: number}
+        max_budget: {type: number}
+
+    EmailTemplateCreate:
+      type: object
+      required: [name, subject]
+      properties:
+        name: {type: string}
+        subject: {type: string}
+        preheader: {type: string}
+        from_name: {type: string, nullable: true}
+        reply_to: {type: string, nullable: true}
+        html_body: {type: string}
+        plain_text_body: {type: string}
+
+    CampaignCreate:
+      type: object
+      required: [name, template_id, schedule_type]
+      properties:
+        name: {type: string}
+        template_id: {type: string, format: uuid}
+        schedule_type: {type: string, enum: [once, recurring]}
+        scheduled_at: {type: string, format: date-time}
+        audience_ids: {type: array, items: {type: string, format: uuid}}
+        contact_id: {type: string, format: uuid, nullable: true}
+        recurrence: {type: string}
+        recurrence_day_of_week: {type: integer}
+        recurrence_day_of_month: {type: integer}
+        recurrence_time: {type: string}
+
+    AgentCreate:
+      type: object
+      required: [name, email, role]
+      properties:
+        name: {type: string}
+        email: {type: string, format: email}
+        role: {type: string, enum: [org_admin, org_user]}

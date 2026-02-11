@@ -150,16 +150,6 @@ func (s *ContactService) CreateContact(contact *models.Contact) error {
 		}
 	}
 
-	// Check for duplicate name (first + last) in organization
-	fullName := strings.TrimSpace(contact.FirstName) + " " + strings.TrimSpace(contact.LastName)
-	existingByName, err := s.contactRepo.FindByNameAndOrg(fullName, contact.OrganizationID)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
-	}
-	if existingByName != nil {
-		return errors.New("contact with this name already exists in your organization")
-	}
-
 	// Set default active status
 	contact.IsActive = true
 
@@ -504,20 +494,6 @@ func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int
 				skipCount++
 				continue
 			}
-		}
-
-		// Check for duplicate name
-		fullName := strings.TrimSpace(contact.FirstName) + " " + strings.TrimSpace(contact.LastName)
-		existingByName, err := s.contactRepo.FindByNameAndOrg(fullName, contact.OrganizationID)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			fmt.Printf("Row %d: Error checking duplicate name: %v\n", i+2, err)
-			skipCount++
-			continue
-		}
-		if existingByName != nil {
-			fmt.Printf("Row %d: Skipped - duplicate name: %s\n", i+2, fullName)
-			skipCount++
-			continue
 		}
 
 		// Create contact
