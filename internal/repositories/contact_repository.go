@@ -117,6 +117,24 @@ func (r *ContactRepository) FindByEmailOrPhone(email, phone, orgID string) (*mod
 	return &contact, nil
 }
 
+// FindByNameAndOrg finds a contact by full name within an organization
+func (r *ContactRepository) FindByNameAndOrg(fullName, orgID string) (*models.Contact, error) {
+	var contact models.Contact
+
+	// Split full name into first and last
+	parts := strings.Split(strings.TrimSpace(fullName), " ")
+	if len(parts) < 2 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	firstName := parts[0]
+	lastName := strings.Join(parts[1:], " ")
+
+	err := database.DB.Where("organization_id = ? AND first_name = ? AND last_name = ?",
+		orgID, firstName, lastName).First(&contact).Error
+	return &contact, err
+}
+
 // BulkCreate creates multiple contacts in a transaction
 func (r *ContactRepository) BulkCreate(contacts []models.Contact) error {
 	return database.DB.Transaction(func(tx *gorm.DB) error {

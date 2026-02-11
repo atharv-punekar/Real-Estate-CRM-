@@ -37,7 +37,6 @@ func CreateContact(c *fiber.Ctx) error {
 		Bathrooms         int     `json:"bathrooms"`
 		SquareFeet        int     `json:"square_feet"`
 		PreferredLocation string  `json:"preferred_location"`
-		Notes             string  `json:"notes"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -86,7 +85,6 @@ func CreateContact(c *fiber.Ctx) error {
 		Bathrooms:         req.Bathrooms,
 		SquareFeet:        req.SquareFeet,
 		PreferredLocation: strings.TrimSpace(req.PreferredLocation),
-		Notes:             strings.TrimSpace(req.Notes),
 	}
 
 	if err := contactService.CreateContact(&contact); err != nil {
@@ -172,7 +170,6 @@ func UpdateContact(c *fiber.Ctx) error {
 		Bathrooms         *int     `json:"bathrooms"`
 		SquareFeet        *int     `json:"square_feet"`
 		PreferredLocation *string  `json:"preferred_location"`
-		Notes             *string  `json:"notes"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -212,9 +209,6 @@ func UpdateContact(c *fiber.Ctx) error {
 	}
 	if req.PreferredLocation != nil {
 		contact.PreferredLocation = *req.PreferredLocation
-	}
-	if req.Notes != nil {
-		contact.Notes = *req.Notes
 	}
 
 	if err := contactRepo.Update(contact); err != nil {

@@ -21,7 +21,6 @@ type Contact struct {
 	PreferredLocation string
 
 	IsActive  bool `gorm:"default:true"`
-	Notes     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

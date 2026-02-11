@@ -3,6 +3,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -36,6 +37,86 @@ func ValidateBudgetRange(min, max float64) error {
 	if min > 0 && max > 0 && min > max {
 		return errors.New("minimum budget cannot be greater than maximum budget")
 	}
+	return nil
+}
+
+// ValidatePhoneNumber validates that phone number is exactly 10 digits
+func ValidatePhoneNumber(phone string) error {
+	trimmed := strings.TrimSpace(phone)
+
+	if trimmed == "" {
+		return errors.New("phone number cannot be empty")
+	}
+
+	// Remove common non-digit characters
+	cleaned := strings.ReplaceAll(trimmed, "-", "")
+	cleaned = strings.ReplaceAll(cleaned, " ", "")
+	cleaned = strings.ReplaceAll(cleaned, "(", "")
+	cleaned = strings.ReplaceAll(cleaned, ")", "")
+	cleaned = strings.ReplaceAll(cleaned, "+", "")
+
+	// Check if only digits remain
+	for _, char := range cleaned {
+		if char < '0' || char > '9' {
+			return errors.New("phone number must contain only digits")
+		}
+	}
+
+	// Check length
+	if len(cleaned) != 10 {
+		return errors.New("phone number must be exactly 10 digits")
+	}
+
+	return nil
+}
+
+// ValidateContactName validates that a name contains only alphabetic characters
+func ValidateContactName(name, fieldName string) error {
+	trimmed := strings.TrimSpace(name)
+
+	if trimmed == "" {
+		return fmt.Errorf("%s cannot be empty", fieldName)
+	}
+
+	// Check minimum length (at least 2 characters)
+	if len(trimmed) < 2 {
+		return fmt.Errorf("%s must be at least 2 characters long", fieldName)
+	}
+
+	// Check that name contains only alphabets
+	for _, char := range trimmed {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
+			return fmt.Errorf("%s must contain only alphabetic characters", fieldName)
+		}
+	}
+
+	return nil
+}
+
+// ValidateEmailFormat validates email format using regex
+func ValidateEmailFormat(email string) error {
+	trimmed := strings.TrimSpace(email)
+
+	if trimmed == "" {
+		return errors.New("email cannot be empty")
+	}
+
+	// Email regex: basic pattern for local@domain.ext
+	emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+	matched, err := regexp.MatchString(emailRegex, trimmed)
+	if err != nil {
+		return errors.New("email validation error")
+	}
+
+	if !matched {
+		return errors.New("email must be a valid format (e.g., user@example.com)")
+	}
+
+	// Check for exactly one @ symbol
+	if strings.Count(trimmed, "@") != 1 {
+		return errors.New("email must contain exactly one @ symbol")
+	}
+
 	return nil
 }
 
