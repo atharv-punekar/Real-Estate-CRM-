@@ -1,0 +1,5 @@
+first_name,last_name,email,phone,budget_min,budget_max,property_type,bedrooms,bathrooms,square_feet,preferred_location
+Rohan,Mehta,rohan1@example.com,9000000001,0,0,Apartment,2,2,900,Pune
+Kiran,Jadhav,kiran2@example.com,9000000002,7000000,5000000,Flat,2,2,1000,Mumbai
+Anita,Joshi,anita3@example.com,9000000003,-5000000,8000000,Villa,3,3,1500,Nashik
+

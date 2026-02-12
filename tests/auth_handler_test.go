@@ -278,7 +278,7 @@ func TestActivatePassword_Success(t *testing.T) {
 	// Activate password request
 	reqBody := map[string]string{
 		"token":    inviteToken,
-		"password": "newpassword123",
+		"password": "newpassword123!",
 	}
 	body, _ := json.Marshal(reqBody)
 
@@ -329,7 +329,7 @@ func TestActivatePassword_ExpiredToken(t *testing.T) {
 	// Activate password request
 	reqBody := map[string]string{
 		"token":    inviteToken,
-		"password": "newpassword123",
+		"password": "newpassword123!",
 	}
 	body, _ := json.Marshal(reqBody)
 

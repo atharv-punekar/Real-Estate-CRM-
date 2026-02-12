@@ -63,14 +63,9 @@ func NewEmailService() *EmailService {
 	return &EmailService{smtpConfig: config}
 }
 
-func BuildFrontendInviteLink(token string) string {
-	frontend := os.Getenv("FRONTEND_URL")
-	return fmt.Sprintf("%s/auth/activate?token=%s", frontend, token)
-}
-
 // SendInviteEmail sends an invite email to a new agent
-func (s *EmailService) SendInviteEmail(email, name, orgName, token string) error {
-	inviteLink := BuildFrontendInviteLink(token)
+func (s *EmailService) SendInviteEmail(frontendURL, email, name, orgName, token string) error {
+	inviteLink := GenerateInviteLink(frontendURL, token)
 	// If SMTP is not configured, just log
 	if s.smtpConfig == nil {
 		log.Printf("📧 INVITE EMAIL (SMTP not configured - logging only)")

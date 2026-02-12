@@ -44,8 +44,9 @@ func SuperAdminCreateAgent(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Validate email with strict rules: lowercase letters/numbers, exactly 1 @, simple domain
-	if err := utils.ValidateAgentEmail(req.Email); err != nil {
+	// Validate and normalize email
+	normalizedEmail, err := utils.NormalizeEmail(req.Email)
+	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
@@ -66,7 +67,7 @@ func SuperAdminCreateAgent(c *fiber.Ctx) error {
 	}
 
 	// Unique email check
-	existing, _ := userRepo.FindByEmail(req.Email)
+	existing, _ := userRepo.FindByEmail(normalizedEmail)
 	if existing != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Email already exists"})
 	}
@@ -81,7 +82,7 @@ func SuperAdminCreateAgent(c *fiber.Ctx) error {
 	user := models.User{
 		OrganizationID: orgUUID,
 		Name:           req.Name,
-		Email:          req.Email,
+		Email:          normalizedEmail,
 		Role:           req.Role,
 		IsActive:       true,
 		InviteToken:    &inviteToken,
@@ -93,11 +94,14 @@ func SuperAdminCreateAgent(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create agent"})
 	}
 
+	// Load config for frontend URL
+	cfg, _ := config.Load()
+
 	// Generate invite link and send email
-	inviteLink := services.BuildFrontendInviteLink(inviteToken)
+	inviteLink := services.GenerateInviteLink(cfg.Server.FrontendURL, inviteToken)
 
 	// Send invite email (async in production)
-	go emailService.SendInviteEmail(user.Email, user.Name, org.Name, inviteToken)
+	go emailService.SendInviteEmail(cfg.Server.FrontendURL, user.Email, user.Name, org.Name, inviteToken)
 
 	return c.JSON(fiber.Map{
 		"message":     "Agent created successfully. Invite email sent.",
@@ -266,10 +270,10 @@ func SuperAdminRegenerateInvite(c *fiber.Ctx) error {
 
 	// Generate invite link and send email
 	cfg, _ := config.Load()
-	inviteLink := services.GenerateInviteLink(cfg.Server.BaseURL, inviteToken)
+	inviteLink := services.GenerateInviteLink(cfg.Server.FrontendURL, inviteToken)
 
 	// Send invite email
-	go emailService.SendInviteEmail(user.Email, user.Name, orgName, inviteToken)
+	go emailService.SendInviteEmail(cfg.Server.FrontendURL, user.Email, user.Name, orgName, inviteToken)
 
 	return c.JSON(fiber.Map{
 		"message":     "Invite token regenerated and email sent",

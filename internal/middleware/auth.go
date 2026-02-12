@@ -50,12 +50,3 @@ func OrgUserOrAdmin(c *fiber.Ctx) error {
 	}
 	return c.Next()
 }
-
-// RequireActiveOrganization checks if the organization is active
-func RequireActiveOrganization(c *fiber.Ctx) error {
-	// This middleware should be used after JWTProtected
-	// The organization status check will be handled in handlers
-	// by fetching the organization and checking is_active field
-	// This is a placeholder for future enhancement if needed
-	return c.Next()
-}

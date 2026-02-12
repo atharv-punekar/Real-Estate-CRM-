@@ -43,6 +43,16 @@ func (r *NotificationRepository) MarkAsRead(notificationID string) error {
 		}).Error
 }
 
+// MarkAllAsRead marks all notifications for a user as read
+func (r *NotificationRepository) MarkAllAsRead(userID string) error {
+	return database.DB.Model(&models.Notification{}).
+		Where("user_id = ? AND is_read = ?", userID, false).
+		Updates(map[string]interface{}{
+			"is_read": true,
+			"read_at": "NOW()",
+		}).Error
+}
+
 // FindUnreadCount returns the count of unread notifications for a user
 func (r *NotificationRepository) FindUnreadCount(userID string) (int64, error) {
 	var count int64

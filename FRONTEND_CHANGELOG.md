@@ -71,6 +71,19 @@
 
 ---
 
+## 2026-02-11 (Update 10)
+
+### 🔔 Mark All Notifications Read
+
+**New Endpoint:**
+- `PUT /agent/notifications/read-all`
+
+**Description:**
+- Allows you to mark **all** your unread notifications as read in a single request.
+- Returns `{"message": "All notifications marked as read"}`.
+
+---
+
 ## 2026-02-11 (Update 7)
 
 ### ⚠️ Campaign Validation Updates

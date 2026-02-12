@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/datatypes"
+)
 
 type BackgroundJobLog struct {
 	ID string `gorm:"type:uuid;default:gen_random_uuid();primaryKey"`
@@ -13,6 +17,7 @@ type BackgroundJobLog struct {
 
 	TotalRecords     *int
 	ProcessedRecords *int
+	Details          datatypes.JSON `gorm:"type:jsonb"`
 	ErrorMessage     string
 
 	CreatedAt time.Time

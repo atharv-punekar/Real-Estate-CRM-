@@ -2,12 +2,15 @@ package services
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
+	"gorm.io/datatypes"
 )
 
 type BackgroundJobService struct {
@@ -59,9 +62,12 @@ func (s *BackgroundJobService) ProcessCSVImport(jobID, orgID, userID string, csv
 	// Start the job (queued → running)
 	s.StartJob(jobID)
 
+	// Update job progress
+	job, _ := s.jobRepo.FindByID(jobID)
+
 	// Parse CSV
 	reader := bytes.NewReader(csvData)
-	contacts, err := s.contactService.ParseCSV(reader, orgID, userID)
+	contacts, parseErrors, totalRows, err := s.contactService.ParseCSV(reader, orgID, userID)
 	if err != nil {
 		s.FailJob(jobID, err.Error())
 		s.notifService.NotifyCSVImportFailed(orgID, userID, err.Error())
@@ -69,34 +75,63 @@ func (s *BackgroundJobService) ProcessCSVImport(jobID, orgID, userID string, csv
 	}
 
 	// Update total records
-	job, _ := s.jobRepo.FindByID(jobID)
 	if job != nil {
-		totalRecords := len(contacts)
-		job.TotalRecords = &totalRecords
+		job.TotalRecords = &totalRows
 		s.jobRepo.Update(job)
 	}
 
 	// Bulk create contacts
-	successCount, skipCount, rowErrors, err := s.contactService.BulkCreateContacts(contacts)
+	successCount, duplicateCount, failedCount, createErrors, err := s.contactService.BulkCreateContacts(contacts)
 	if err != nil {
+		// Systemic error
 		s.FailJob(jobID, err.Error())
 		s.notifService.NotifyCSVImportFailed(orgID, userID, err.Error())
 		return
 	}
 
+	// combine errors
+	var allErrors []string
+	for _, pe := range parseErrors {
+		allErrors = append(allErrors, fmt.Sprintf("Row %d: %s", pe.Row, strings.Join(pe.Errors, ", ")))
+	}
+	allErrors = append(allErrors, createErrors...)
+
+	// Construct details for JSON log
+	importResult := map[string]interface{}{
+		"total_rows":      totalRows,
+		"imported_count":  successCount,
+		"duplicate_count": duplicateCount,
+		"failed_count":    len(parseErrors) + failedCount,
+		"parse_errors":    parseErrors,
+		"create_errors":   createErrors,
+	}
+
 	// Update job progress and finish
 	if job != nil {
 		job.ProcessedRecords = &successCount
-		if len(rowErrors) > 0 {
-			job.ErrorMessage = strings.Join(rowErrors, "; ")
+		if len(allErrors) > 0 {
+			// Store first few errors in message for quick view
+			limit := 5
+			if len(allErrors) < limit {
+				limit = len(allErrors)
+			}
+			job.ErrorMessage = strings.Join(allErrors[:limit], "; ")
+			if len(allErrors) > limit {
+				job.ErrorMessage += fmt.Sprintf(" (+%d more)", len(allErrors)-limit)
+			}
 		}
+
+		// Store full details in JSONB
+		jsonBytes, _ := json.Marshal(importResult)
+		job.Details = datatypes.JSON(jsonBytes)
+
 		s.jobRepo.Update(job)
 	}
 	s.FinishJob(jobID)
 
 	// Notify user
-	s.notifService.NotifyCSVImportCompleted(orgID, userID, successCount)
-	log.Printf("CSV Import completed: %d imported, %d skipped", successCount, skipCount)
+	s.notifService.NotifyCSVImportCompleted(orgID, userID, successCount, duplicateCount, len(parseErrors)+failedCount)
+	log.Printf("CSV Import completed: %d imported, %d duplicates, %d failed", successCount, duplicateCount, len(parseErrors)+failedCount)
 }
 
 // ProcessCampaignRun executes a campaign and sends emails

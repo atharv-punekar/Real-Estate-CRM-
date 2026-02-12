@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/atharvpunekar/real_estate_crm_backend/internal/config"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/services"
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
@@ -30,11 +31,11 @@ func CreateAgent(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Validate email with strict rules: lowercase letters/numbers, exactly 1 @, simple domain
-	if err := utils.ValidateAgentEmail(req.Email); err != nil {
+	// Validate and normalize email
+	normalizedEmail, err := utils.NormalizeEmail(req.Email)
+	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
-	normalizedEmail := strings.ToLower(strings.TrimSpace(req.Email))
 
 	// Validate role
 	if req.Role == "" {
@@ -100,11 +101,14 @@ func CreateAgent(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to create agent"})
 	}
 
+	// Load config for frontend URL
+	cfg, _ := config.Load()
+
 	// Send invite email using only token
-	go emailService.SendInviteEmail(newUser.Email, newUser.Name, org.Name, inviteToken)
+	go emailService.SendInviteEmail(cfg.Server.FrontendURL, newUser.Email, newUser.Name, org.Name, inviteToken)
 
 	// Build correct frontend invite link to return in API response
-	inviteLink := services.BuildFrontendInviteLink(inviteToken)
+	inviteLink := services.GenerateInviteLink(cfg.Server.FrontendURL, inviteToken)
 
 	// Notify org admins about new agent (async)
 	go notifService.NotifyAgentAdded(orgID.(string), newUser.ID.String(), newUser.Name)
@@ -362,9 +366,12 @@ func RegenerateInvite(c *fiber.Ctx) error {
 		orgName = org.Name
 	}
 
+	// Load config for frontend URL
+	cfg, _ := config.Load()
+
 	// Generate invite link and send email
-	go emailService.SendInviteEmail(agent.Email, agent.Name, orgName, inviteToken)
-	inviteLink := services.BuildFrontendInviteLink(inviteToken)
+	go emailService.SendInviteEmail(cfg.Server.FrontendURL, agent.Email, agent.Name, orgName, inviteToken)
+	inviteLink := services.GenerateInviteLink(cfg.Server.FrontendURL, inviteToken)
 
 	return c.JSON(fiber.Map{
 		"message":     "Invite token regenerated and email sent",

@@ -149,7 +149,6 @@ func GetContactByID(c *fiber.Ctx) error {
 	return c.JSON(contact)
 }
 
-// UpdateContact updates a contact
 func UpdateContact(c *fiber.Ctx) error {
 	orgID := c.Locals("org_id").(string)
 	userID := c.Locals("user_id").(string)
@@ -179,40 +178,83 @@ func UpdateContact(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
 
-	// Update fields if provided
+	// -------- STRING FIELDS --------
+
 	if req.FirstName != nil {
-		contact.FirstName = *req.FirstName
+		contact.FirstName = strings.TrimSpace(*req.FirstName)
 	}
+
 	if req.LastName != nil {
-		contact.LastName = *req.LastName
+		contact.LastName = strings.TrimSpace(*req.LastName)
 	}
-	if req.Email != nil {
-		contact.Email = *req.Email
-	}
+
 	if req.Phone != nil {
-		contact.Phone = *req.Phone
+		contact.Phone = strings.TrimSpace(*req.Phone)
 	}
+
+	if req.PropertyType != nil {
+		contact.PropertyType = strings.TrimSpace(*req.PropertyType)
+	}
+
+	if req.PreferredLocation != nil {
+		contact.PreferredLocation = strings.TrimSpace(*req.PreferredLocation)
+	}
+
+	// -------- EMAIL VALIDATION --------
+
+	if req.Email != nil {
+		normalizedEmail, err := utils.NormalizeEmail(*req.Email)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		contact.Email = normalizedEmail
+	}
+
+	// -------- NUMERIC VALIDATION --------
+
 	if req.BudgetMin != nil {
+		if err := utils.ValidateNonNegative(*req.BudgetMin, "Minimum budget"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
 		contact.BudgetMin = *req.BudgetMin
 	}
+
 	if req.BudgetMax != nil {
+		if err := utils.ValidateNonNegative(*req.BudgetMax, "Maximum budget"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
 		contact.BudgetMax = *req.BudgetMax
 	}
-	if req.PropertyType != nil {
-		contact.PropertyType = *req.PropertyType
-	}
+
 	if req.Bedrooms != nil {
+		if err := utils.ValidateNonNegativeInt(*req.Bedrooms, "Bedrooms"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
 		contact.Bedrooms = *req.Bedrooms
 	}
+
 	if req.Bathrooms != nil {
+		if err := utils.ValidateNonNegativeInt(*req.Bathrooms, "Bathrooms"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
 		contact.Bathrooms = *req.Bathrooms
 	}
+
 	if req.SquareFeet != nil {
+		if err := utils.ValidateNonNegativeInt(*req.SquareFeet, "Square feet"); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
 		contact.SquareFeet = *req.SquareFeet
 	}
-	if req.PreferredLocation != nil {
-		contact.PreferredLocation = *req.PreferredLocation
+
+	// -------- BUDGET RANGE VALIDATION --------
+	// Validate after updating min/max values
+
+	if err := utils.ValidateBudgetRange(contact.BudgetMin, contact.BudgetMax); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// -------- SAVE --------
 
 	if err := contactRepo.Update(contact); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to update contact"})
@@ -293,7 +335,7 @@ func ImportContactsCSV(c *fiber.Ctx) error {
 
 	// Parse CSV
 	reader := bytes.NewReader(csvData)
-	contacts, err := contactService.ParseCSV(reader, orgID, userID)
+	contacts, parseErrors, totalRows, err := contactService.ParseCSV(reader, orgID, userID)
 	if err != nil {
 		if job.ID != "" {
 			bgJobService.FailJob(job.ID, err.Error())
@@ -301,40 +343,90 @@ func ImportContactsCSV(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	totalRecords := len(contacts)
 	if job.ID != "" {
-		job.TotalRecords = &totalRecords
+		job.TotalRecords = &totalRows
 		database.DB.Save(&job)
 	}
 
 	// Bulk create contacts
-	successCount, skipCount, rowErrors, err := contactService.BulkCreateContacts(contacts)
+	successCount, duplicateCount, failedCount, createErrors, err := contactService.BulkCreateContacts(contacts)
 	if err != nil {
+		// Systemic error
 		if job.ID != "" {
 			bgJobService.FailJob(job.ID, err.Error())
 		}
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Combine errors for API response
+	type APIError struct {
+		Row    int      `json:"row"`
+		Errors []string `json:"errors"`
+	}
+	var apiErrors []APIError
+
+	// Add parse errors
+	for _, pe := range parseErrors {
+		apiErrors = append(apiErrors, APIError{
+			Row:    pe.Row,
+			Errors: pe.Errors,
+		})
+	}
+
+	// Add create errors (these are strings, need to parse row number if possible, or just add as general errors)
+	// The CreateErrors from BulkCreate are simple strings.
+	// We'll append them to a separate list or try to parse.
+	// For API simplicity, let's return them as a list of strings if they don't fit the structure,
+	// or better, standardise the BulkCreate error format later. For now, we'll return them as `invalid_rows` if we can't map them.
+	// But wait, the previous code returned `errors`.
+	// The prompt wants:
+	// "invalid_details": [ { "row": 4, "errors": ["email invalid"] } ]
+
+	// Current `createErrors` are strings like "Failed to create contact ..." or "Error checking duplicates ...".
+	// They don't have row numbers cleanly attached in a struct, just in the string "Row X: ...".
+	// Regex parsing? Or just return the strings in a separate field?
+	// The prompt asked for specific JSON structure.
+	// Let's iterate `createErrors` and try to extract row number if present.
+	// Or just return `createErrors` as a list of strings in `general_errors`.
+
+	// Let's stick to the prompt's `invalid_details`.
+	// Since `BulkCreateContacts` returns `[]string`, and `s.contactRepo.Create` might not fail often for individual rows if validation passes...
+	// Duplicate checks are done explicitly.
+	// So `createErrors` are rare database errors.
+
+	// Let's just return `parseErrors` as `invalid_details` and `createErrors` as just `errors`.
+
 	// Update job progress and finish
 	if job.ID != "" {
 		job.ProcessedRecords = &successCount
-		if len(rowErrors) > 0 {
-			job.ErrorMessage = strings.Join(rowErrors, "; ")
+		var allErrors []string
+		for _, pe := range parseErrors {
+			allErrors = append(allErrors, fmt.Sprintf("Row %d: %s", pe.Row, strings.Join(pe.Errors, ", ")))
+		}
+		allErrors = append(allErrors, createErrors...)
+
+		if len(allErrors) > 0 {
+			job.ErrorMessage = strings.Join(allErrors, "; ")
+			// limit length
+			if len(job.ErrorMessage) > 1000 {
+				job.ErrorMessage = job.ErrorMessage[:997] + "..."
+			}
 		}
 		database.DB.Save(&job)
 		bgJobService.FinishJob(job.ID)
 	}
 
 	// Notify user via system notification as well
-	notifService.NotifyCSVImportCompleted(orgID, userID, successCount)
+	notifService.NotifyCSVImportCompleted(orgID, userID, successCount, duplicateCount, len(parseErrors)+failedCount)
 
 	return c.JSON(fiber.Map{
-		"message":          "CSV import completed",
-		"total_records":    totalRecords,
-		"imported_records": successCount,
-		"skipped_records":  skipCount,
-		"errors":           rowErrors,
+		"message":         "CSV import completed",
+		"total_rows":      totalRows,
+		"imported_rows":   successCount,
+		"duplicate_rows":  duplicateCount,
+		"invalid_rows":    len(parseErrors) + failedCount,
+		"invalid_details": apiErrors,
+		"general_errors":  createErrors,
 	})
 }
 

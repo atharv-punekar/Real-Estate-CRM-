@@ -5,14 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/atharvpunekar/real_estate_crm_backend/internal/models"
 	repository "github.com/atharvpunekar/real_estate_crm_backend/internal/repositories"
+	"github.com/atharvpunekar/real_estate_crm_backend/internal/utils"
 	"gorm.io/gorm"
 )
+
+// RowError represents an error in a CSV row
+type RowError struct {
+	Row    int      `json:"row"`
+	Errors []string `json:"errors"`
+}
 
 type ContactService struct {
 	contactRepo *repository.ContactRepository
@@ -54,19 +60,12 @@ func (s *ContactService) ValidateContact(contact *models.Contact) error {
 		}
 	}
 
-	// Validate email (required and valid format with regex)
-	if strings.TrimSpace(contact.Email) == "" {
-		return errors.New("email is required")
+	// Validate and normalize email (required and valid format)
+	normalizedEmail, err := utils.NormalizeEmail(contact.Email)
+	if err != nil {
+		return err
 	}
-	// Email regex validation: must have @ and domain
-	emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, _ := regexp.MatchString(emailRegex, contact.Email)
-	if !matched {
-		return errors.New("email must be a valid format (e.g., user@example.com)")
-	}
-	if strings.Count(contact.Email, "@") != 1 {
-		return errors.New("email must contain exactly one @ symbol")
-	}
+	contact.Email = normalizedEmail
 	if strings.TrimSpace(contact.Phone) == "" {
 		return errors.New("phone is required")
 	}
@@ -156,12 +155,12 @@ func (s *ContactService) CreateContact(contact *models.Contact) error {
 	return s.contactRepo.Create(contact)
 }
 
-// ParseCSV parses a CSV file and returns contacts
-func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]models.Contact, error) {
+// ParseCSV parses a CSV file and returns valid contacts and row errors
+func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]models.Contact, []RowError, int, error) {
 	// Read all content first to detect delimiter
 	content, err := io.ReadAll(file)
 	if err != nil {
-		return nil, errors.New("failed to read file content")
+		return nil, nil, 0, errors.New("failed to read file content")
 	}
 
 	// Auto-detect delimiter: check first line for comma or tab
@@ -182,7 +181,7 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 	// Read header
 	headers, err := reader.Read()
 	if err != nil {
-		return nil, errors.New("failed to read CSV headers")
+		return nil, nil, 0, errors.New("failed to read CSV headers")
 	}
 
 	// Map headers to indices — clean BOM & normalize
@@ -200,12 +199,12 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 	requiredHeaders := []string{"first_name", "last_name", "email", "phone", "budget_min", "budget_max", "property_type", "bedrooms", "bathrooms", "square_feet", "preferred_location"}
 	for _, required := range requiredHeaders {
 		if _, exists := headerMap[required]; !exists {
-			return nil, fmt.Errorf("CSV must contain '%s' column", required)
+			return nil, nil, 0, fmt.Errorf("CSV must contain '%s' column", required)
 		}
 	}
 
 	var contacts []models.Contact
-	var parseErrors []string
+	var rowErrors []RowError
 	lineNum := 1
 
 	for {
@@ -214,7 +213,10 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 			break
 		}
 		if err != nil {
-			parseErrors = append(parseErrors, fmt.Sprintf("Row %d: error reading CSV line", lineNum))
+			rowErrors = append(rowErrors, RowError{
+				Row:    lineNum,
+				Errors: []string{fmt.Sprintf("error reading CSV line: %v", err)},
+			})
 			lineNum++
 			continue
 		}
@@ -227,72 +229,71 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 		}
 
 		// Parse and validate required fields
-		var rowErrors []string
+		var currentErrors []string
 
 		// First Name
 		if idx, ok := headerMap["first_name"]; ok && idx < len(record) {
 			contact.FirstName = strings.TrimSpace(record[idx])
 			if contact.FirstName == "" {
-				rowErrors = append(rowErrors, "first_name is required")
+				currentErrors = append(currentErrors, "first_name is required")
 			} else if len(contact.FirstName) < 2 {
-				rowErrors = append(rowErrors, "first_name must be at least 2 characters long")
+				currentErrors = append(currentErrors, "first_name must be at least 2 characters long")
 			} else {
 				// Check alphabets only
 				for _, char := range contact.FirstName {
 					if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
-						rowErrors = append(rowErrors, "first_name must contain only alphabetic characters")
+						currentErrors = append(currentErrors, "first_name must contain only alphabetic characters")
 						break
 					}
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "first_name is required")
+			currentErrors = append(currentErrors, "first_name is required")
 		}
 
 		// Last Name
 		if idx, ok := headerMap["last_name"]; ok && idx < len(record) {
 			contact.LastName = strings.TrimSpace(record[idx])
 			if contact.LastName == "" {
-				rowErrors = append(rowErrors, "last_name is required")
+				currentErrors = append(currentErrors, "last_name is required")
 			} else if len(contact.LastName) < 2 {
-				rowErrors = append(rowErrors, "last_name must be at least 2 characters long")
+				currentErrors = append(currentErrors, "last_name must be at least 2 characters long")
 			} else {
 				// Check alphabets only
 				for _, char := range contact.LastName {
 					if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
-						rowErrors = append(rowErrors, "last_name must contain only alphabetic characters")
+						currentErrors = append(currentErrors, "last_name must contain only alphabetic characters")
 						break
 					}
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "last_name is required")
+			currentErrors = append(currentErrors, "last_name is required")
 		}
 
 		// Email
 		if idx, ok := headerMap["email"]; ok && idx < len(record) {
-			contact.Email = strings.TrimSpace(record[idx])
-			if contact.Email == "" {
-				rowErrors = append(rowErrors, "email is required")
+			email := strings.TrimSpace(record[idx])
+			if email == "" {
+				currentErrors = append(currentErrors, "email is required")
 			} else {
-				// Email regex validation
-				emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-				matched, _ := regexp.MatchString(emailRegex, contact.Email)
-				if !matched {
-					rowErrors = append(rowErrors, "email must be valid format")
-				} else if strings.Count(contact.Email, "@") != 1 {
-					rowErrors = append(rowErrors, "email must contain exactly one @ symbol")
+				// Validate and normalize email
+				normalizedEmail, err := utils.NormalizeEmail(email)
+				if err != nil {
+					currentErrors = append(currentErrors, "email: "+err.Error())
+				} else {
+					contact.Email = normalizedEmail
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "email is required")
+			currentErrors = append(currentErrors, "email is required")
 		}
 
 		// Phone
 		if idx, ok := headerMap["phone"]; ok && idx < len(record) {
 			contact.Phone = strings.TrimSpace(record[idx])
 			if contact.Phone == "" {
-				rowErrors = append(rowErrors, "phone is required")
+				currentErrors = append(currentErrors, "phone is required")
 			} else {
 				// Validate phone number (exactly 10 digits)
 				cleaned := strings.ReplaceAll(contact.Phone, "-", "")
@@ -310,214 +311,193 @@ func (s *ContactService) ParseCSV(file io.Reader, orgID, createdBy string) ([]mo
 				}
 
 				if !isDigit {
-					rowErrors = append(rowErrors, "phone must contain only digits")
+					currentErrors = append(currentErrors, "phone must contain only digits")
 				} else if len(cleaned) != 10 {
-					rowErrors = append(rowErrors, "phone must be exactly 10 digits")
+					currentErrors = append(currentErrors, "phone must be exactly 10 digits")
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "phone is required")
+			currentErrors = append(currentErrors, "phone is required")
 		}
 
 		// Property Type
 		if idx, ok := headerMap["property_type"]; ok && idx < len(record) {
 			contact.PropertyType = strings.TrimSpace(record[idx])
 			if contact.PropertyType == "" {
-				rowErrors = append(rowErrors, "property_type is required")
+				currentErrors = append(currentErrors, "property_type is required")
 			}
 		} else {
-			rowErrors = append(rowErrors, "property_type is required")
+			currentErrors = append(currentErrors, "property_type is required")
 		}
 
 		// Preferred Location
 		if idx, ok := headerMap["preferred_location"]; ok && idx < len(record) {
 			contact.PreferredLocation = strings.TrimSpace(record[idx])
 			if contact.PreferredLocation == "" {
-				rowErrors = append(rowErrors, "preferred_location is required")
+				currentErrors = append(currentErrors, "preferred_location is required")
 			}
 		} else {
-			rowErrors = append(rowErrors, "preferred_location is required")
+			currentErrors = append(currentErrors, "preferred_location is required")
 		}
 
 		// Budget Min
 		if idx, ok := headerMap["budget_min"]; ok && idx < len(record) {
 			val := strings.TrimSpace(record[idx])
 			if val == "" {
-				rowErrors = append(rowErrors, "budget_min is required")
+				currentErrors = append(currentErrors, "budget_min is required")
 			} else {
 				if budgetMin, err := strconv.ParseFloat(val, 64); err == nil {
 					if budgetMin < 0 {
-						rowErrors = append(rowErrors, "budget_min cannot be negative")
+						currentErrors = append(currentErrors, "budget_min cannot be negative")
 					} else {
 						contact.BudgetMin = budgetMin
 					}
 				} else {
-					rowErrors = append(rowErrors, "budget_min must be a valid number")
+					currentErrors = append(currentErrors, "budget_min must be a valid number")
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "budget_min is required")
+			currentErrors = append(currentErrors, "budget_min is required")
 		}
 
 		// Budget Max
 		if idx, ok := headerMap["budget_max"]; ok && idx < len(record) {
 			val := strings.TrimSpace(record[idx])
 			if val == "" {
-				rowErrors = append(rowErrors, "budget_max is required")
+				currentErrors = append(currentErrors, "budget_max is required")
 			} else {
 				if budgetMax, err := strconv.ParseFloat(val, 64); err == nil {
 					if budgetMax < 0 {
-						rowErrors = append(rowErrors, "budget_max cannot be negative")
+						currentErrors = append(currentErrors, "budget_max cannot be negative")
 					} else {
 						contact.BudgetMax = budgetMax
 					}
 				} else {
-					rowErrors = append(rowErrors, "budget_max must be a valid number")
+					currentErrors = append(currentErrors, "budget_max must be a valid number")
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "budget_max is required")
+			currentErrors = append(currentErrors, "budget_max is required")
 		}
 
 		// Bedrooms
 		if idx, ok := headerMap["bedrooms"]; ok && idx < len(record) {
 			val := strings.TrimSpace(record[idx])
 			if val == "" {
-				rowErrors = append(rowErrors, "bedrooms is required")
+				currentErrors = append(currentErrors, "bedrooms is required")
 			} else {
 				if bedrooms, err := strconv.Atoi(val); err == nil {
 					if bedrooms < 0 {
-						rowErrors = append(rowErrors, "bedrooms cannot be negative")
+						currentErrors = append(currentErrors, "bedrooms cannot be negative")
 					} else if bedrooms > 5 {
-						rowErrors = append(rowErrors, "bedrooms cannot exceed 5")
+						currentErrors = append(currentErrors, "bedrooms cannot exceed 5")
 					} else {
 						contact.Bedrooms = bedrooms
 					}
 				} else {
-					rowErrors = append(rowErrors, "bedrooms must be a valid number")
+					currentErrors = append(currentErrors, "bedrooms must be a valid number")
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "bedrooms is required")
+			currentErrors = append(currentErrors, "bedrooms is required")
 		}
 
 		// Bathrooms
 		if idx, ok := headerMap["bathrooms"]; ok && idx < len(record) {
 			val := strings.TrimSpace(record[idx])
 			if val == "" {
-				rowErrors = append(rowErrors, "bathrooms is required")
+				currentErrors = append(currentErrors, "bathrooms is required")
 			} else {
 				if bathrooms, err := strconv.Atoi(val); err == nil {
 					if bathrooms < 0 {
-						rowErrors = append(rowErrors, "bathrooms cannot be negative")
+						currentErrors = append(currentErrors, "bathrooms cannot be negative")
 					} else if bathrooms > 5 {
-						rowErrors = append(rowErrors, "bathrooms cannot exceed 5")
+						currentErrors = append(currentErrors, "bathrooms cannot exceed 5")
 					} else {
 						contact.Bathrooms = bathrooms
 					}
 				} else {
-					rowErrors = append(rowErrors, "bathrooms must be a valid number")
+					currentErrors = append(currentErrors, "bathrooms must be a valid number")
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "bathrooms is required")
+			currentErrors = append(currentErrors, "bathrooms is required")
 		}
 
 		// Square Feet
 		if idx, ok := headerMap["square_feet"]; ok && idx < len(record) {
 			val := strings.TrimSpace(record[idx])
 			if val == "" {
-				rowErrors = append(rowErrors, "square_feet is required")
+				currentErrors = append(currentErrors, "square_feet is required")
 			} else {
 				if sqft, err := strconv.Atoi(val); err == nil {
 					if sqft < 0 {
-						rowErrors = append(rowErrors, "square_feet cannot be negative")
+						currentErrors = append(currentErrors, "square_feet cannot be negative")
 					} else {
 						contact.SquareFeet = sqft
 					}
 				} else {
-					rowErrors = append(rowErrors, "square_feet must be a valid number")
+					currentErrors = append(currentErrors, "square_feet must be a valid number")
 				}
 			}
 		} else {
-			rowErrors = append(rowErrors, "square_feet is required")
+			currentErrors = append(currentErrors, "square_feet is required")
 		}
 
 		// Validate budget range
 		if contact.BudgetMin > 0 && contact.BudgetMax > 0 && contact.BudgetMin > contact.BudgetMax {
-			rowErrors = append(rowErrors, "budget_min cannot be greater than budget_max")
+			currentErrors = append(currentErrors, "budget_min cannot be greater than budget_max")
 		}
 
 		// If there are any row errors, skip this row
-		if len(rowErrors) > 0 {
-			parseErrors = append(parseErrors, fmt.Sprintf("Row %d: %s", lineNum, strings.Join(rowErrors, "; ")))
+		if len(currentErrors) > 0 {
+			rowErrors = append(rowErrors, RowError{
+				Row:    lineNum,
+				Errors: currentErrors,
+			})
 			continue
 		}
 
 		contacts = append(contacts, contact)
 	}
 
-	// If there were any parse errors, return them
-	if len(parseErrors) > 0 {
-		// Return first 10 errors to avoid overwhelming the response
-		maxErrors := 10
-		if len(parseErrors) > maxErrors {
-			return nil, fmt.Errorf("CSV contains validation errors in %d rows. First %d errors:\n%s",
-				len(parseErrors), maxErrors, strings.Join(parseErrors[:maxErrors], "\n"))
-		}
-		return nil, fmt.Errorf("CSV contains validation errors:\n%s", strings.Join(parseErrors, "\n"))
-	}
-
-	if len(contacts) == 0 {
-		return nil, errors.New("no valid contacts found in CSV")
-	}
-
-	return contacts, nil
+	return contacts, rowErrors, lineNum - 1, nil
 }
 
-// BulkCreateContacts creates multiple contacts, skipping duplicates and returning errors
-func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int, []string, error) {
+// BulkCreateContacts creates multiple contacts, skipping duplicates and returning detailed stats
+// Returns: importedCount, duplicateCount, failedCount, failures, systemError
+func (s *ContactService) BulkCreateContacts(contacts []models.Contact) (int, int, int, []string, error) {
 	successCount := 0
-	skipCount := 0
-	var errorMessages []string
+	duplicateCount := 0
+	failedCount := 0
+	var failureMessages []string
 
-	for i, contact := range contacts {
-		rowNum := i + 2 // Header is row 1, 0-indexed array starts at row 2
-
+	for _, contact := range contacts {
 		// Check for duplicate email
 		if contact.Email != "" {
 			existing, err := s.contactRepo.FindByEmailOrPhone(contact.Email, "", contact.OrganizationID)
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				msg := fmt.Sprintf("Row %d: Error checking duplicate email: %v", rowNum, err)
-				fmt.Println(msg)
-				errorMessages = append(errorMessages, msg)
-				skipCount++
+				msg := fmt.Sprintf("Error checking duplicate email %s: %v", contact.Email, err)
+				failureMessages = append(failureMessages, msg)
+				failedCount++
 				continue
 			}
 			if existing != nil {
-				msg := fmt.Sprintf("Row %d: Skipped - duplicate email: %s", rowNum, contact.Email)
-				fmt.Println(msg)
-				errorMessages = append(errorMessages, msg)
-				skipCount++
+				duplicateCount++
 				continue
 			}
 		}
 
 		// Create contact
 		if err := s.contactRepo.Create(&contact); err != nil {
-			msg := fmt.Sprintf("Row %d: Failed to create contact: %v", rowNum, err)
-			fmt.Println(msg)
-			errorMessages = append(errorMessages, msg)
-			skipCount++
+			msg := fmt.Sprintf("Failed to create contact %s: %v", contact.Email, err)
+			failureMessages = append(failureMessages, msg)
+			failedCount++
 			continue
 		}
 		successCount++
-		if successCount%10 == 0 {
-			fmt.Printf("Created %d contacts so far...\n", successCount)
-		}
 	}
 
-	fmt.Printf("Bulk create completed: %d success, %d skipped\n", successCount, skipCount)
-
-	return successCount, skipCount, errorMessages, nil
+	// Log summary (removed fmt.Printf for cleaner logs)
+	return successCount, duplicateCount, failedCount, failureMessages, nil
 }

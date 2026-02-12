@@ -54,6 +54,7 @@ func RegisterAgentRoutes(app *fiber.App) {
 	// Notification routes
 	notifications := agent.Group("/notifications")
 	notifications.Get("/", handlers.GetNotifications)
+	notifications.Put("/read-all", handlers.MarkAllNotificationsRead)
 	notifications.Put("/:id/read", handlers.MarkNotificationRead)
 	notifications.Get("/unread-count", handlers.GetUnreadCount)
 }

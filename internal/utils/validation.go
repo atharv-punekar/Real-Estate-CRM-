@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// Pre-compiled email regex for performance (compiled once at package init)
+var emailRegex = regexp.MustCompile(`^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$`)
+
 // ValidateNotEmpty validates that a string is not empty or whitespace-only
 func ValidateNotEmpty(value, fieldName string) error {
 	trimmed := strings.TrimSpace(value)
@@ -93,43 +96,27 @@ func ValidateContactName(name, fieldName string) error {
 	return nil
 }
 
-// ValidateEmailFormat validates email format using regex
-func ValidateEmailFormat(email string) error {
+// NormalizeEmail validates and normalizes an email address.
+// It trims whitespace, converts to lowercase, and validates the format.
+// Returns normalized email or error with descriptive message.
+func NormalizeEmail(email string) (string, error) {
 	trimmed := strings.TrimSpace(email)
 
 	if trimmed == "" {
-		return errors.New("email cannot be empty")
+		return "", errors.New("email cannot be empty")
 	}
 
-	// Email regex: basic pattern for local@domain.ext
-	emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	matched, err := regexp.MatchString(emailRegex, trimmed)
-	if err != nil {
-		return errors.New("email validation error")
+	// Normalize to lowercase
+	normalized := strings.ToLower(trimmed)
+
+	// Validate format using pre-compiled regex
+	if !emailRegex.MatchString(normalized) {
+		return "", errors.New("email must be a valid format (e.g., user@example.com)")
 	}
 
-	if !matched {
-		return errors.New("email must be a valid format (e.g., user@example.com)")
-	}
-
-	// Check for exactly one @ symbol
-	if strings.Count(trimmed, "@") != 1 {
-		return errors.New("email must contain exactly one @ symbol")
-	}
-
-	return nil
-}
-
-// NormalizeEmail converts email to lowercase and validates format
-func NormalizeEmail(email string) (string, error) {
-	if email == "" {
-		return "", nil // Empty email is handled by other validators
-	}
-
-	normalized := strings.ToLower(strings.TrimSpace(email))
-
-	if !IsValidEmail(normalized) {
-		return "", errors.New("invalid email format")
+	// Ensure exactly one @ symbol
+	if strings.Count(normalized, "@") != 1 {
+		return "", errors.New("email must contain exactly one @ symbol")
 	}
 
 	return normalized, nil
@@ -245,59 +232,6 @@ func ValidateAgentName(name string) error {
 		for _, char := range part {
 			if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')) {
 				return errors.New("name must contain only alphabetic characters")
-			}
-		}
-	}
-
-	return nil
-}
-
-// ValidateAgentEmail validates that email contains only lowercase letters and numbers with exactly 1 @ and 1 domain
-func ValidateAgentEmail(email string) error {
-	trimmed := strings.TrimSpace(email)
-
-	if trimmed == "" {
-		return errors.New("email cannot be empty")
-	}
-
-	// Check for exactly one @ symbol
-	atCount := strings.Count(trimmed, "@")
-	if atCount != 1 {
-		return errors.New("email must contain exactly one @ symbol")
-	}
-
-	// Split by @ to get local and domain parts
-	parts := strings.Split(trimmed, "@")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return errors.New("invalid email format")
-	}
-
-	localPart := parts[0]
-	domainPart := parts[1]
-
-	// Validate local part: only lowercase letters and numbers
-	for _, char := range localPart {
-		if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) {
-			return errors.New("email local part must contain only lowercase letters and numbers")
-		}
-	}
-
-	// Validate domain part: must have exactly one dot and follow pattern text.text
-	dotCount := strings.Count(domainPart, ".")
-	if dotCount != 1 {
-		return errors.New("email domain must contain exactly one dot (e.g., example.com)")
-	}
-
-	domainParts := strings.Split(domainPart, ".")
-	if len(domainParts) != 2 || domainParts[0] == "" || domainParts[1] == "" {
-		return errors.New("invalid email domain format")
-	}
-
-	// Validate each domain part: only lowercase letters and numbers
-	for _, domPart := range domainParts {
-		for _, char := range domPart {
-			if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) {
-				return errors.New("email domain must contain only lowercase letters and numbers")
 			}
 		}
 	}

@@ -99,32 +99,27 @@ function validateAgentName(name) {
 
 | Rule | Description |
 |------|-------------|
-| **Local Part** | Only lowercase letters (a-z) and numbers (0-9) |
+| **Format** | Standard email format (e.g., user@example.com) |
+| **Local Part** | Letters, numbers, dots, underscores, plus/minus signs allowed |
 | **@ Symbol** | Exactly ONE @ symbol required |
 | **Domain** | Valid domain format (e.g., example.com) |
-| **Domain Characters** | Lowercase letters, numbers, dots, hyphens only |
-| **Domain Dots** | Must contain at least one dot, not at start/end |
+| **Domain Dots** | Must contain at least one dot |
 
 ### Valid Examples
 ```
 ✅ john@example.com
-✅ john123@company.org
-✅ user@mail.example.com
-✅ agent2@real-estate.com
+✅ john.doe@company.org
+✅ user+tag@mail.example.com
+✅ agent_name@real-estate.com
+✅ 123user@domain.net
 ```
 
 ### Invalid Examples
 ```
-❌ John@example.com       (uppercase in local part)
-❌ john.doe@example.com   (dot in local part)
-❌ john_doe@example.com   (underscore in local part)
-❌ john@Example.com       (uppercase in domain)
 ❌ john@@example.com      (multiple @ symbols)
 ❌ @example.com           (missing local part)
 ❌ john@                  (missing domain)
 ❌ john@example           (no domain extension)
-❌ john@.example.com      (dot at domain start)
-❌ john@example.com.      (dot at domain end)
 ```
 
 ### Error Messages
@@ -132,10 +127,8 @@ function validateAgentName(name) {
 | Validation | Error Message |
 |------------|---------------|
 | Empty email | "email cannot be empty" |
+| Invalid format | "email must be a valid format (e.g., user@example.com)" |
 | Invalid @ count | "email must contain exactly one '@' symbol" |
-| Invalid local part | "email local part must contain only lowercase letters and numbers" |
-| Invalid domain | "email domain must be valid (e.g., example.com)" |
-| Invalid domain chars | "email domain must contain only lowercase letters, numbers, dots, or hyphens" |
 
 ### Frontend Implementation
 
@@ -147,33 +140,16 @@ function validateAgentEmail(email) {
   
   const trimmed = email.trim();
   
+  // Standard email regex
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(trimmed)) {
+    return 'Email must be a valid format (e.g., user@example.com)';
+  }
+  
   // Check for exactly one @
   const atCount = (trimmed.match(/@/g) || []).length;
-  const atIndex = trimmed.indexOf('@');
-  
-  if (atCount !== 1 || atIndex <= 0) {
+  if (atCount !== 1) {
     return 'Email must contain exactly one @ symbol';
-  }
-  
-  const localPart = trimmed.substring(0, atIndex);
-  const domainPart = trimmed.substring(atIndex + 1);
-  
-  // Validate local part: only lowercase and numbers
-  const localPattern = /^[a-z0-9]+$/;
-  if (!localPattern.test(localPart)) {
-    return 'Email local part must contain only lowercase letters and numbers';
-  }
-  
-  // Validate domain: must have dot, not at start/end
-  const dotIndex = domainPart.lastIndexOf('.');
-  if (dotIndex <= 0 || dotIndex === domainPart.length - 1) {
-    return 'Email domain must be valid (e.g., example.com)';
-  }
-  
-  // Validate domain characters
-  const domainPattern = /^[a-z0-9.-]+$/;
-  if (!domainPattern.test(domainPart)) {
-    return 'Email domain must contain only lowercase letters, numbers, dots, or hyphens';
   }
   
   return null; // Valid

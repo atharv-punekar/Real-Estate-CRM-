@@ -220,11 +220,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  message: {type: string}
-                  total_records: {type: integer}
-                  imported_records: {type: integer}
-                  skipped_records: {type: integer}
-                  errors: {type: array, items: {type: string}}
+                  message: {type: string, description: "Import status message"}
+                  total_records: {type: integer, description: "Total number of rows in CSV"}
+                  imported_records: {type: integer, description: "Number of successfully imported rows"}
+                  skipped_records: {type: integer, description: "Number of rows that failed to import"}
+                  errors: {type: array, items: {type: string}, description: "List of error messages for failed rows"}
 
   /agent/audiences:
     get:

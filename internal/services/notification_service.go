@@ -90,13 +90,13 @@ func (s *NotificationService) NotifyCampaignSent(orgID, userID, campaignID strin
 }
 
 // NotifyCSVImportCompleted creates a notification when CSV import completes
-func (s *NotificationService) NotifyCSVImportCompleted(orgID, userID string, importedCount int) error {
+func (s *NotificationService) NotifyCSVImportCompleted(orgID, userID string, importedCount, duplicateCount, failedCount int) error {
 	notification := models.Notification{
 		OrganizationID:   orgID,
 		UserID:           userID,
 		NotificationType: "csv_import_completed",
 		Title:            "CSV Import Completed",
-		Message:          fmt.Sprintf("Successfully imported %d contacts from CSV", importedCount),
+		Message:          fmt.Sprintf("Import completed: %d imported, %d duplicate, %d failed", importedCount, duplicateCount, failedCount),
 		IsRead:           false,
 	}
 	return s.notificationRepo.Create(&notification)
